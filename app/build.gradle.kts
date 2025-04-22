@@ -47,6 +47,11 @@ android {
 }
 
 dependencies {
+    implementation("com.google.accompanist:accompanist-navigation-animation:0.34.0")
+    // Per icone Material 3 (se vuoi usare le icone di sistema nella navbar)
+    implementation("androidx.compose.material:material-icons-extended")
+
+    implementation("com.google.accompanist:accompanist-permissions:0.34.0")
     // Jetpack Compose core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -86,6 +91,7 @@ dependencies {
     // Gson
     implementation("com.google.code.gson:gson:2.10.1")
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.play.services.location)
 
     // Test
     testImplementation(libs.junit)
