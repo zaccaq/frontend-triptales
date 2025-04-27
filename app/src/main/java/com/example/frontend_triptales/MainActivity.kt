@@ -39,6 +39,7 @@ import com.google.accompanist.permissions.rememberPermissionState
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.*
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.delay
 import java.io.File
 import java.io.IOException
 
@@ -130,24 +131,50 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxSize().padding(32.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp)
         ) {
-            Icon(Icons.Default.TravelExplore, contentDescription = null, tint = Color.White, modifier = Modifier.size(72.dp))
-            Text("TripTales", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Text("Esplora, racconta, ricorda.", fontSize = 16.sp, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(bottom = 32.dp))
+            Icon(
+                Icons.Default.TravelExplore,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(96.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AnimatedAppTitle(fullText = "TripTales", typingSpeedMillis = 80L)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                "Esplora, racconta, ricorda.",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.padding(bottom = 32.dp)
+            )
 
             Card(
-                shape = RoundedCornerShape(24.dp),
-                elevation = CardDefaults.cardElevation(8.dp),
+                shape = RoundedCornerShape(32.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                elevation = CardDefaults.cardElevation(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it },
                         label = { Text("Email") },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     )
                     OutlinedTextField(
                         value = password,
@@ -155,14 +182,18 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                         label = { Text("Password") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                         visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     )
                     Button(
                         onClick = onLoginSuccess,
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(55.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA))
                     ) {
-                        Text("Entra", fontSize = 18.sp)
+                        Text("Entra", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -170,7 +201,11 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
             Spacer(modifier = Modifier.height(24.dp))
 
             TextButton(onClick = onNavigateToRegister) {
-                Text("Non hai un account? Registrati", color = Color.White)
+                Text(
+                    "Non hai un account? Registrati",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
@@ -188,31 +223,58 @@ fun RegistrationScreen(onRegistrationSuccess: () -> Unit, onNavigateToLogin: () 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxSize().padding(32.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp)
         ) {
-            Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color.White, modifier = Modifier.size(72.dp))
-            Text("Crea Account", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Text("Unisciti a TripTales!", fontSize = 16.sp, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(bottom = 32.dp))
+            Icon(
+                Icons.Default.PersonAdd,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(96.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AnimatedAppTitle(fullText = "Crea Account", typingSpeedMillis = 70L)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                "Unisciti a TripTales!",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.padding(bottom = 32.dp)
+            )
 
             Card(
-                shape = RoundedCornerShape(24.dp),
-                elevation = CardDefaults.cardElevation(8.dp),
+                shape = RoundedCornerShape(32.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                elevation = CardDefaults.cardElevation(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
                         label = { Text("Nome") },
                         leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     )
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it },
                         label = { Text("Email") },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     )
                     OutlinedTextField(
                         value = password,
@@ -220,7 +282,8 @@ fun RegistrationScreen(onRegistrationSuccess: () -> Unit, onNavigateToLogin: () 
                         label = { Text("Password") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                         visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     )
                     OutlinedTextField(
                         value = confirmPassword,
@@ -228,10 +291,18 @@ fun RegistrationScreen(onRegistrationSuccess: () -> Unit, onNavigateToLogin: () 
                         label = { Text("Conferma Password") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                         visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     )
 
-                    errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    errorMessage?.let {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
 
                     Button(
                         onClick = {
@@ -241,10 +312,13 @@ fun RegistrationScreen(onRegistrationSuccess: () -> Unit, onNavigateToLogin: () 
                                 errorMessage = "Le password non coincidono o sono vuote"
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(55.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA))
                     ) {
-                        Text("Registrati", fontSize = 18.sp)
+                        Text("Registrati", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -252,10 +326,51 @@ fun RegistrationScreen(onRegistrationSuccess: () -> Unit, onNavigateToLogin: () 
             Spacer(modifier = Modifier.height(24.dp))
 
             TextButton(onClick = onNavigateToLogin) {
-                Text("Hai già un account? Accedi", color = Color.White)
+                Text(
+                    "Hai già un account? Accedi",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
+}
+
+@Composable
+fun GradientBackground(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF5AC8FA),
+                        Color(0xFF007AFF),
+                        Color(0xFF5856D6)
+                    )
+                )
+            )
+    ) {
+        content()
+    }
+}
+@Composable
+fun AnimatedAppTitle(fullText: String, typingSpeedMillis: Long = 100L) {
+    var displayedText by remember { mutableStateOf("") }
+
+    LaunchedEffect(fullText) {
+        fullText.forEachIndexed { index, _ ->
+            displayedText = fullText.substring(0, index + 1)
+            delay(typingSpeedMillis)
+        }
+    }
+
+    Text(
+        text = displayedText,
+        fontSize = 36.sp,
+        fontWeight = FontWeight.Bold,
+        color = Color.White
+    )
 }
 
 @Composable
@@ -328,24 +443,6 @@ fun MapScreen() {
         }
     } ?: Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
         Text("Sto cercando la tua posizione...", style = MaterialTheme.typography.bodyLarge)
-    }
-}
-
-@Composable
-fun GradientBackground(content: @Composable () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF0061FF),
-                        Color(0xFF60EFFF)
-                    )
-                )
-            )
-    ) {
-        content()
     }
 }
 @Composable
