@@ -2,9 +2,14 @@ package com.example.frontend_triptales
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,17 +25,22 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
+import coil.compose.rememberImagePainter
 import com.example.frontend_triptales.ui.theme.FrontendtriptalesTheme
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.*
 import com.google.maps.android.compose.*
+import java.io.File
+import java.io.IOException
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -336,6 +346,94 @@ fun GradientBackground(content: @Composable () -> Unit) {
             )
     ) {
         content()
+    }
+}
+@Composable
+fun CameraScreen() {
+    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    val context = LocalContext.current
+
+    // Open camera to capture image
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { isSuccess ->
+        if (isSuccess) {
+            // Do something with the captured photo (display preview or share)
+        }
+    }
+
+    // Create temporary file to store the photo
+    val imageFile = createImageFile()
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp)
+    ) {
+        // Show photo preview if exists
+        photoUri?.let {
+            Image(
+                painter = rememberImagePainter(it),
+                contentDescription = "Photo preview",
+                modifier = Modifier.size(200.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Button to take a photo
+        Button(
+            onClick = {
+                imageFile?.let { file ->
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        file
+                    )
+                    launcher.launch(uri)
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Scatta Foto", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Share button (simulate the sharing with the group)
+        Button(
+            onClick = {
+                photoUri?.let {
+                    // Implement sharing logic (example: upload to backend or share to group)
+                    Toast.makeText(context, "Foto condivisa con il gruppo!", Toast.LENGTH_SHORT).show()
+                } ?: Toast.makeText(context, "Nessuna foto scattata!", Toast.LENGTH_SHORT).show()
+            },
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Condividi con il gruppo", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+fun createImageFile(): File? {
+    // Create an image file to store the photo
+    val imageFileName = "JPEG_${System.currentTimeMillis()}_.jpg"
+    val storageDir = File("/path/to/save/images") // Replace with actual directory path
+    return try {
+        File.createTempFile(imageFileName, ".jpg", storageDir)
+    } catch (e: IOException) {
+        e.printStackTrace()
+        null
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun DefaultPreview() {
+    FrontendtriptalesTheme {
+        CameraScreen()
     }
 }
 
