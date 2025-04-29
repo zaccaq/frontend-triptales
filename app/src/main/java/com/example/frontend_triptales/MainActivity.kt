@@ -42,6 +42,24 @@ import com.google.maps.android.compose.*
 import kotlinx.coroutines.delay
 import java.io.File
 import java.io.IOException
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextAlign
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,13 +77,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// --- SCHERMATE DISPONIBILI ---
+// --- AGGIORNA LA CLASSE SCREEN PER LE NUOVE ROTTE ---
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
     object Login : Screen("login", "Login", Icons.Default.Person)
     object Register : Screen("register", "Registrati", Icons.Default.PersonAdd)
     object Home : Screen("home", "Home", Icons.Default.Home)
     object Group : Screen("group", "Gruppo", Icons.Default.Group)
     object Map : Screen("map", "Mappa", Icons.Default.Map)
+    object CreateGroup : Screen("create_group", "Crea Gruppo", Icons.Default.Add)
+    object GroupChat : Screen("group_chat/{groupId}", "Chat", Icons.Default.Send) {
+        fun createRoute(groupId: String) = "group_chat/$groupId"
+    }
 }
 
 @Composable
@@ -78,7 +100,9 @@ fun TripTalesApp() {
 
     Scaffold(
         bottomBar = {
-            if (currentRoute !in listOf(Screen.Login.route, Screen.Register.route)) {
+            if (currentRoute !in listOf(Screen.Login.route, Screen.Register.route,
+                    Screen.CreateGroup.route,
+                    "group_chat/")) {
                 NavigationBar {
                     bottomBarScreens.forEach { screen ->
                         NavigationBarItem(
@@ -116,8 +140,36 @@ fun TripTalesApp() {
                 )
             }
             composable(Screen.Home.route) { HomeScreen() }
-            composable(Screen.Group.route) { GroupScreen() }
+            composable(Screen.Group.route) {
+                GroupScreen(
+                    onCreateGroupClick = { navController.navigate(Screen.CreateGroup.route) },
+                    onJoinGroupClick = { /* gestire l'unione a un gruppo */ },
+                    onGroupClick = { groupId -> navController.navigate(Screen.GroupChat.createRoute(groupId)) }
+                )
+            }
             composable(Screen.Map.route) { MapScreen() }
+
+            // Nuove schermate
+            composable(Screen.CreateGroup.route) {
+                CreateGroupScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onGroupCreated = { groupId ->
+                        navController.navigate(Screen.GroupChat.createRoute(groupId)) {
+                            popUpTo(Screen.Group.route)
+                        }
+                    }
+                )
+            }
+            composable(
+                route = Screen.GroupChat.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
+                GroupChatScreen(
+                    groupId = groupId,
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
@@ -171,7 +223,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it },
-                        label = { Text("Email") },
+                        label = { Text("Username o Email") },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
@@ -263,7 +315,7 @@ fun RegistrationScreen(onRegistrationSuccess: () -> Unit, onNavigateToLogin: () 
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Nome") },
+                        label = { Text("Username") },
                         leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
@@ -384,29 +436,468 @@ fun HomeScreen() {
 }
 
 @Composable
-fun GroupScreen() {
-    var groupName by remember { mutableStateOf("") }
+fun GroupScreen(
+    onCreateGroupClick: () -> Unit,
+    onJoinGroupClick: () -> Unit,
+    onGroupClick: (String) -> Unit
+) {
+    // Simula alcuni gruppi per la demo
+    val groups = remember {
+        listOf(
+            GroupItem("1", "Vacanza in Sicilia", "Ultima attività: 2 ore fa", 5),
+            GroupItem("2", "Weekend in montagna", "Ultima attività: ieri", 3),
+            GroupItem("3", "Gita scolastica Parigi", "Ultima attività: 3 giorni fa", 15)
+        )
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier.fillMaxSize().padding(32.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
     ) {
-        Text("Gruppi di Gita", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold))
+        Text(
+            "I tuoi gruppi",
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(vertical = 16.dp)
+        )
+
+        if (groups.isEmpty()) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    "Non sei ancora in nessun gruppo.\nCrea o unisciti a un gruppo per iniziare!",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                items(groups) { group ->
+                    GroupCard(
+                        group = group,
+                        onClick = { onGroupClick(group.id) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onCreateGroupClick,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA))
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Crea nuovo gruppo", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onJoinGroupClick,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Text("Unisciti a un gruppo", fontSize = 16.sp)
+        }
+    }
+}
+
+// Modello dati per i gruppi
+data class GroupItem(
+    val id: String,
+    val name: String,
+    val lastActivity: String,
+    val memberCount: Int
+)
+
+@Composable
+fun GroupCard(group: GroupItem, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color(0xFF5AC8FA), CircleShape)
+            ) {
+                Text(
+                    text = group.name.take(1).uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = group.name,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp
+                )
+                Text(
+                    text = group.lastActivity,
+                    color = Color.Gray,
+                    fontSize = 14.sp
+                )
+            }
+
+            Text(
+                text = "${group.memberCount} 👤",
+                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp
+            )
+        }
+    }
+}
+
+// --- SCHERMATA CREAZIONE GRUPPO ---
+@Composable
+fun CreateGroupScreen(
+    onBackClick: () -> Unit,
+    onGroupCreated: (String) -> Unit
+) {
+    var groupName by remember { mutableStateOf("") }
+    var groupDescription by remember { mutableStateOf("") }
+    var inviteMembers by remember { mutableStateOf("") }
+    var isPrivate by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // Barra superiore con pulsante indietro
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+        ) {
+            IconButton(onClick = onBackClick) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
+            }
+            Text(
+                "Crea nuovo gruppo",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
+
+        // Campi per creare il gruppo
         OutlinedTextField(
             value = groupName,
             onValueChange = { groupName = it },
             label = { Text("Nome del gruppo") },
+            placeholder = { Text("Es. Vacanza in Sicilia") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = groupDescription,
+            onValueChange = { groupDescription = it },
+            label = { Text("Descrizione (opzionale)") },
+            placeholder = { Text("Aggiungi una breve descrizione") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp),
+            maxLines = 4
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Toggle per gruppo privato/pubblico
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "Gruppo privato",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = isPrivate,
+                onCheckedChange = { isPrivate = it }
+            )
+        }
+
+        Text(
+            if (isPrivate) "Solo le persone invitate potranno unirsi" else "Chiunque con il codice può unirsi",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.Gray
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = inviteMembers,
+            onValueChange = { inviteMembers = it },
+            label = { Text("Invita membri (opzionale)") },
+            placeholder = { Text("Inserisci nomi utente separati da virgola") },
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-            Text("Crea gruppo")
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Button(
+            onClick = {
+                if (groupName.isNotBlank()) {
+                    // Qui potresti aggiungere la logica per creare il gruppo sul backend
+                    // Per ora generiamo un ID di gruppo fittizio
+                    val groupId = UUID.randomUUID().toString().take(8)
+                    Toast.makeText(context, "Gruppo creato con successo!", Toast.LENGTH_SHORT).show()
+                    onGroupCreated(groupId)
+                } else {
+                    Toast.makeText(context, "Inserisci un nome per il gruppo", Toast.LENGTH_SHORT).show()
+                }
+            },
+            enabled = groupName.isNotBlank(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA))
+        ) {
+            Icon(Icons.Default.Check, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Crea gruppo", fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-            Text("Unisciti a un gruppo")
+    }
+}
+
+data class ChatMessage(
+    val id: String,
+    val senderId: String,
+    val senderName: String,
+    val content: String,
+    val timestamp: Long,
+    val isCurrentUser: Boolean
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GroupChatScreen(
+    groupId: String,
+    onBackClick: () -> Unit
+) {
+    // In un'app reale, recupereresti queste informazioni dal backend
+    val groupName = remember {
+        when (groupId) {
+            "1" -> "Vacanza in Sicilia"
+            "2" -> "Weekend in montagna"
+            "3" -> "Gita scolastica Parigi"
+            else -> "Gruppo $groupId"
+        }
+    }
+
+    // Messaggi di esempio
+    val messages = remember {
+        listOf(
+            ChatMessage("1", "user1", "Marco", "Ciao a tutti! Chi è pronto per il viaggio?", System.currentTimeMillis() - 3600000, false),
+            ChatMessage("2", "user2", "Laura", "Io sono pronta! Ho già fatto le valigie.", System.currentTimeMillis() - 3500000, false),
+            ChatMessage("3", "currentUser", "Tu", "Io devo ancora organizzarmi, ma ci sarò!", System.currentTimeMillis() - 3400000, true),
+            ChatMessage("4", "user3", "Giovanni", "Qualcuno ha controllato le previsioni meteo?", System.currentTimeMillis() - 3300000, false),
+            ChatMessage("5", "currentUser", "Tu", "Sembra che ci sarà bel tempo per tutto il weekend! 😎", System.currentTimeMillis() - 3200000, true),
+            ChatMessage("6", "user1", "Marco", "Perfetto! Non vedo l'ora di partire!", System.currentTimeMillis() - 3100000, false)
+        )
+    }
+
+    var newMessage by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val listState = rememberLazyListState()
+
+    // Scorrimento automatico in fondo alla chat all'avvio
+    LaunchedEffect(Unit) {
+        if (messages.isNotEmpty()) {
+            listState.scrollToItem(messages.size - 1)
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Barra superiore della chat
+        TopAppBar(
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color(0xFF5AC8FA), CircleShape)
+                    ) {
+                        Text(
+                            text = groupName.take(1).uppercase(),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = groupName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onBackClick) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface
+            )
+        )
+
+        // Lista messaggi
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(horizontal = 16.dp)
+        ) {
+            items(messages) { message ->
+                ChatMessageItem(message)
+            }
+        }
+
+        // Area invio messaggi
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(),
+            tonalElevation = 8.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = newMessage,
+                    onValueChange = { newMessage = it },
+                    placeholder = { Text("Scrivi un messaggio...") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester),
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 3
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                IconButton(
+                    onClick = {
+                        // Qui aggiungeresti la logica per inviare il messaggio
+                        if (newMessage.isNotBlank()) {
+                            // In un'app reale, questo invierebbe il messaggio al backend
+                            newMessage = ""
+                        }
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(Color(0xFF5AC8FA), CircleShape)
+                ) {
+                    Icon(
+                        Icons.Default.Send,
+                        contentDescription = "Invia",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+fun ChatMessageItem(message: ChatMessage) {
+    val alignment = if (message.isCurrentUser) Alignment.End else Alignment.Start
+    val bubbleColor = if (message.isCurrentUser) Color(0xFF5AC8FA) else Color(0xFFEEEEEE)
+    val textColor = if (message.isCurrentUser) Color.White else Color.Black
+
+    val dateFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val timeString = remember(message.timestamp) { dateFormat.format(Date(message.timestamp)) }
+
+    Column(
+        horizontalAlignment = alignment,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        if (!message.isCurrentUser) {
+            Text(
+                text = message.senderName,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(start = 12.dp, bottom = 2.dp)
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .background(
+                    color = bubbleColor,
+                    shape = RoundedCornerShape(
+                        topStart = 16.dp,
+                        topEnd = 16.dp,
+                        bottomStart = if (message.isCurrentUser) 16.dp else 0.dp,
+                        bottomEnd = if (message.isCurrentUser) 0.dp else 16.dp
+                    )
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Column {
+                Text(
+                    text = message.content,
+                    color = textColor,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = timeString,
+                    color = if (message.isCurrentUser) Color.White.copy(alpha = 0.7f) else Color.Gray,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.align(Alignment.End)
+                )
+            }
         }
     }
 }
