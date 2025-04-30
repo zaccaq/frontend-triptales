@@ -1,4 +1,4 @@
-package com.example.frontend_triptales.ui.components
+package com.example.frontend_triptales.ui.theme.components
 
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*

@@ -8,7 +8,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
-import com.example.frontend_triptales.ui.screens.*
+import com.example.frontend_triptales.ui.theme.screens.*
 
 @Composable
 fun TripTalesApp() {

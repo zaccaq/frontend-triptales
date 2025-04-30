@@ -1,4 +1,4 @@
-package com.example.frontend_triptales.ui.screens
+package com.example.frontend_triptales.ui.theme.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*

@@ -1,4 +1,4 @@
-package com.example.frontend_triptales.ui.screens
+package com.example.frontend_triptales.ui.theme.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,12 +14,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.frontend_triptales.ui.components.AnimatedAppTitle
-import com.example.frontend_triptales.ui.components.GradientBackground
+import com.example.frontend_triptales.ui.theme.components.AnimatedAppTitle
+import com.example.frontend_triptales.ui.theme.components.GradientBackground
 
 @Composable
 fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
-    var email by remember { mutableStateOf("") }
+    var usernameOrEmail by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
     GradientBackground {
@@ -64,8 +64,8 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
+                        value = usernameOrEmail,
+                        onValueChange = { usernameOrEmail = it },
                         label = { Text("Username o Email") },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
                         modifier = Modifier.fillMaxWidth(),
@@ -81,7 +81,10 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                         shape = RoundedCornerShape(16.dp)
                     )
                     Button(
-                        onClick = onLoginSuccess,
+                        onClick = {
+                            // qui puoi passare usernameOrEmail e password a una funzione di login
+                            onLoginSuccess()
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(55.dp),
@@ -105,3 +108,4 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
         }
     }
 }
+

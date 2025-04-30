@@ -1,4 +1,4 @@
-package com.example.frontend_triptales.ui.components
+package com.example.frontend_triptales.ui.theme.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box

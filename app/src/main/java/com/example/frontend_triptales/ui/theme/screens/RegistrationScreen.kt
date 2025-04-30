@@ -1,4 +1,4 @@
-package com.example.frontend_triptales.ui.screens
+package com.example.frontend_triptales.ui.theme.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,15 +16,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.frontend_triptales.ui.components.AnimatedAppTitle
-import com.example.frontend_triptales.ui.components.GradientBackground
+import com.example.frontend_triptales.ui.theme.components.AnimatedAppTitle
+import com.example.frontend_triptales.ui.theme.components.GradientBackground
 
 @Composable
 fun RegistrationScreen(
     onRegistrationSuccess: () -> Unit,
     onNavigateToLogin: () -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var firstName by remember { mutableStateOf("") }
+    var lastName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -69,12 +71,28 @@ fun RegistrationScreen(
                     modifier = Modifier
                         .padding(24.dp)
                         .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
+                        value = username,
+                        onValueChange = { username = it },
                         label = { Text("Username") },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    OutlinedTextField(
+                        value = firstName,
+                        onValueChange = { firstName = it },
+                        label = { Text("Nome") },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    OutlinedTextField(
+                        value = lastName,
+                        onValueChange = { lastName = it },
+                        label = { Text("Cognome") },
                         leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
@@ -119,6 +137,7 @@ fun RegistrationScreen(
                         onClick = {
                             if (password == confirmPassword && password.isNotBlank()) {
                                 onRegistrationSuccess()
+                                // Qui puoi eventualmente passare tutti i dati a una funzione di registrazione
                             } else {
                                 errorMessage = "Le password non coincidono o sono vuote"
                             }
@@ -146,3 +165,4 @@ fun RegistrationScreen(
         }
     }
 }
+

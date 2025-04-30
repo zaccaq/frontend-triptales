@@ -1,4 +1,4 @@
-package com.example.frontend_triptales.ui.screens
+package com.example.frontend_triptales.ui.theme.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

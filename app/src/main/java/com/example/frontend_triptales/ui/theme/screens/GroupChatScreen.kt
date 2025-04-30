@@ -1,5 +1,10 @@
-package com.example.frontend_triptales.ui.screens
+package com.example.frontend_triptales.ui.theme.screens
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,16 +14,22 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import androidx.core.content.FileProvider
+import coil.compose.rememberAsyncImagePainter
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -28,7 +39,8 @@ data class ChatMessage(
     val senderName: String,
     val content: String,
     val timestamp: Long,
-    val isCurrentUser: Boolean
+    val isCurrentUser: Boolean,
+    val imageUri: Uri? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,8 +58,10 @@ fun GroupChatScreen(
         }
     }
 
-    val messages = remember {
-        listOf(
+    val context = LocalContext.current
+    val imageUri = remember { mutableStateOf<Uri?>(null) }
+    val messagesList = remember {
+        mutableStateListOf(
             ChatMessage("1", "user1", "Marco", "Ciao a tutti! Chi è pronto per il viaggio?", System.currentTimeMillis() - 3600000, false),
             ChatMessage("2", "user2", "Laura", "Io sono pronta! Ho già fatto le valigie.", System.currentTimeMillis() - 3500000, false),
             ChatMessage("3", "me", "Tu", "Io devo ancora organizzarmi, ma ci sarò!", System.currentTimeMillis() - 3400000, true)
@@ -57,10 +71,37 @@ fun GroupChatScreen(
     var newMessage by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(Unit) {
-        if (messages.isNotEmpty()) {
-            listState.scrollToItem(messages.size - 1)
+    LaunchedEffect(messagesList.size) {
+        if (messagesList.isNotEmpty()) {
+            listState.scrollToItem(messagesList.size - 1)
         }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && imageUri.value != null) {
+            messagesList.add(
+                ChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    senderId = "me",
+                    senderName = "Tu",
+                    content = "",
+                    timestamp = System.currentTimeMillis(),
+                    isCurrentUser = true,
+                    imageUri = imageUri.value
+                )
+            )
+        }
+    }
+
+    fun createImageUri(context: Context): Uri {
+        val file = File(context.cacheDir, "${System.currentTimeMillis()}.jpg")
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.provider",
+            file
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -102,7 +143,7 @@ fun GroupChatScreen(
                 .weight(1f)
                 .padding(horizontal = 16.dp)
         ) {
-            items(messages) { message ->
+            items(messagesList) { message ->
                 ChatMessageItem(message)
             }
         }
@@ -130,8 +171,32 @@ fun GroupChatScreen(
 
                 IconButton(
                     onClick = {
+                        val uri = createImageUri(context)
+                        imageUri.value = uri
+                        cameraLauncher.launch(uri)
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(Color.Gray, CircleShape)
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = "Fotocamera", tint = Color.White)
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                IconButton(
+                    onClick = {
                         if (newMessage.isNotBlank()) {
-                            // invio fittizio
+                            messagesList.add(
+                                ChatMessage(
+                                    id = UUID.randomUUID().toString(),
+                                    senderId = "me",
+                                    senderName = "Tu",
+                                    content = newMessage,
+                                    timestamp = System.currentTimeMillis(),
+                                    isCurrentUser = true
+                                )
+                            )
                             newMessage = ""
                         }
                     },
@@ -184,7 +249,23 @@ fun ChatMessageItem(message: ChatMessage) {
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Column {
-                Text(text = message.content, color = textColor)
+                message.imageUri?.let {
+                    Image(
+                        painter = rememberAsyncImagePainter(it),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth(0.7f)
+                            .aspectRatio(4f / 3f)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                if (message.content.isNotBlank()) {
+                    Text(text = message.content, color = textColor)
+                }
+
                 Text(
                     text = time,
                     color = if (message.isCurrentUser) Color.White.copy(alpha = 0.7f) else Color.Gray,
