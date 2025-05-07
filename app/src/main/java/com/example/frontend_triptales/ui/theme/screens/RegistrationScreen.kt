@@ -1,5 +1,6 @@
 package com.example.frontend_triptales.ui.theme.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -12,12 +13,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend_triptales.api.RichiestaRegistrazione
+import com.example.frontend_triptales.api.ServizioApi
 import com.example.frontend_triptales.ui.theme.components.AnimatedAppTitle
 import com.example.frontend_triptales.ui.theme.components.GradientBackground
+import kotlinx.coroutines.launch
 
 @Composable
 fun RegistrationScreen(
@@ -31,6 +36,10 @@ fun RegistrationScreen(
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     GradientBackground {
         Column(
@@ -135,20 +144,68 @@ fun RegistrationScreen(
 
                     Button(
                         onClick = {
-                            if (password == confirmPassword && password.isNotBlank()) {
-                                onRegistrationSuccess()
-                                // Qui puoi eventualmente passare tutti i dati a una funzione di registrazione
-                            } else {
-                                errorMessage = "Le password non coincidono o sono vuote"
+                            if (password != confirmPassword) {
+                                errorMessage = "Le password non coincidono"
+                                return@Button
+                            }
+
+                            if (password.isBlank()) {
+                                errorMessage = "La password non può essere vuota"
+                                return@Button
+                            }
+
+                            if (username.isBlank() || firstName.isBlank() || lastName.isBlank() || email.isBlank()) {
+                                errorMessage = "Tutti i campi sono obbligatori"
+                                return@Button
+                            }
+
+                            // Effettua la registrazione tramite API
+                            coroutineScope.launch {
+                                try {
+                                    isLoading = true
+                                    errorMessage = null
+
+                                    val richiesta = RichiestaRegistrazione(
+                                        username = username,
+                                        email = email,
+                                        password = password,
+                                        first_name = firstName,
+                                        last_name = lastName
+                                    )
+
+                                    val risposta = ServizioApi.api.registrazione(richiesta)
+
+                                    if (risposta.isSuccessful) {
+                                        Toast.makeText(context, "Registrazione completata con successo!", Toast.LENGTH_LONG).show()
+                                        onRegistrationSuccess()
+                                    } else {
+                                        val errore = risposta.errorBody()?.string() ?: "Errore durante la registrazione"
+                                        errorMessage = errore
+                                        Toast.makeText(context, errore, Toast.LENGTH_LONG).show()
+                                    }
+                                } catch (e: Exception) {
+                                    errorMessage = "Errore di connessione: ${e.message}"
+                                    Toast.makeText(context, "Errore di connessione: ${e.message}", Toast.LENGTH_LONG).show()
+                                } finally {
+                                    isLoading = false
+                                }
                             }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(55.dp),
                         shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA))
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA)),
+                        enabled = !isLoading
                     ) {
-                        Text("Registrati", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Text("Registrati", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -165,4 +222,3 @@ fun RegistrationScreen(
         }
     }
 }
-

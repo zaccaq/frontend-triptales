@@ -1,5 +1,6 @@
 package com.example.frontend_triptales.ui.theme.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -10,17 +11,27 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend_triptales.api.RichiestaLogin
+import com.example.frontend_triptales.api.ServizioApi
+import com.example.frontend_triptales.auth.SessionManager
 import com.example.frontend_triptales.ui.theme.components.AnimatedAppTitle
 import com.example.frontend_triptales.ui.theme.components.GradientBackground
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
     var usernameOrEmail by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     GradientBackground {
         Column(
@@ -71,6 +82,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
                     )
+
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
@@ -80,18 +92,70 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
                     )
+
+                    errorMessage?.let {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+
                     Button(
                         onClick = {
-                            // qui puoi passare usernameOrEmail e password a una funzione di login
-                            onLoginSuccess()
+                            if (usernameOrEmail.isBlank() || password.isBlank()) {
+                                errorMessage = "Username e password sono obbligatori"
+                                return@Button
+                            }
+
+                            // Effettua il login tramite API
+                            coroutineScope.launch {
+                                try {
+                                    isLoading = true
+                                    errorMessage = null
+
+                                    val richiesta = RichiestaLogin(
+                                        username = usernameOrEmail,
+                                        password = password
+                                    )
+
+                                    val risposta = ServizioApi.api.login(richiesta)
+
+                                    if (risposta.isSuccessful && risposta.body()?.token != null) {
+                                        // Salva la sessione dell'utente
+                                        val sessionManager = SessionManager(context)
+                                        sessionManager.salvaLoginUtente(usernameOrEmail, risposta.body()!!)
+                                        Toast.makeText(context, "Login effettuato con successo!", Toast.LENGTH_LONG).show()
+                                        onLoginSuccess()
+                                    } else {
+                                        val errore = risposta.errorBody()?.string() ?: "Credenziali non valide"
+                                        errorMessage = "Errore: $errore"
+                                        Toast.makeText(context, "Errore: $errore", Toast.LENGTH_LONG).show()
+                                    }
+                                } catch (e: Exception) {
+                                    errorMessage = "Errore di connessione: ${e.message}"
+                                    Toast.makeText(context, "Errore di connessione: ${e.message}", Toast.LENGTH_LONG).show()
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(55.dp),
                         shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA))
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA)),
+                        enabled = !isLoading
                     ) {
-                        Text("Entra", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Text("Entra", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -108,4 +172,3 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
         }
     }
 }
-

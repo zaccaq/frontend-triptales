@@ -59,6 +59,25 @@ android {
 }
 
 dependencies {
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
+    //token
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+    // Retrofit per chiamate HTTP
+    implementation ("com.squareup.retrofit2:retrofit:2.9.0")
+// Converter per JSON
+    implementation ("com.squareup.retrofit2:converter-gson:2.9.0")
+// Coroutines
+    implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+
+
+    implementation("com.auth0.android:jwtdecode:2.0.2")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+    implementation("com.google.mlkit:face-detection:16.1.5")
+    implementation("com.google.mlkit:translate:17.0.2")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     implementation ("androidx.activity:activity-compose:1.8.0")
     implementation ("androidx.core:core-ktx:1.12.0")
 

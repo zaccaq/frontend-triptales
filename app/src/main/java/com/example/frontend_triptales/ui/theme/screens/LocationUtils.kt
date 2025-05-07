@@ -1,7 +1,6 @@
 package com.example.frontend_triptales.ui.theme.screens
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
@@ -32,6 +31,5 @@ fun rememberUserLocation(): LatLng? {
             }
         }
     }
-
     return location
 }
