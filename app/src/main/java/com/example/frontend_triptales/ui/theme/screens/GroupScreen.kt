@@ -1,6 +1,7 @@
 // app/src/main/java/com/example/frontend_triptales/ui/theme/screens/GroupScreen.kt
 package com.example.frontend_triptales.ui.theme.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend_triptales.api.GruppoDTO
 import com.example.frontend_triptales.api.ServizioApi
 import com.example.frontend_triptales.auth.SessionManager
 import kotlinx.coroutines.launch
@@ -59,20 +61,39 @@ fun GroupScreen(
                 val response = api.getMyGroups()
 
                 if (response.isSuccessful && response.body() != null) {
-                    // Converte la risposta API in oggetti GroupItem
-                    groups = response.body()!!.map { group ->
-                        GroupItem(
-                            id = group.id.toString(),
-                            name = group.name,
-                            lastActivity = formatLastActivity(group.lastActivityDate),
-                            memberCount = group.memberCount
-                        )
+                    val responseBody = response.body()
+
+                    // Gestisci sia il caso in cui ricevi un array che un oggetto
+                    when (responseBody) {
+                        is List<*> -> {
+                            // La risposta è un array come previsto
+                            val groupList = responseBody as? List<GruppoDTO> ?: emptyList()
+                            groups = groupList.map { group ->
+                                GroupItem(
+                                    id = group.id.toString(),
+                                    name = group.name,
+                                    lastActivity = formatLastActivity(group.lastActivityDate),
+                                    memberCount = group.memberCount
+                                )
+                            }
+                        }
+                        is Map<*, *> -> {
+                            // La risposta è un oggetto, probabilmente un messaggio di errore o un oggetto vuoto
+                            // In questo caso imposta una lista vuota
+                            groups = emptyList()
+                        }
+                        else -> {
+                            // Fallback generico: imposta una lista vuota
+                            groups = emptyList()
+                        }
                     }
                 } else {
                     errorMessage = "Errore nel caricamento dei gruppi"
                 }
             } catch (e: Exception) {
+                Log.e("GroupScreen", "Errore di connessione: ${e.message}")
                 errorMessage = "Errore di connessione: ${e.message}"
+                groups = emptyList()
             } finally {
                 isLoading = false
             }

@@ -123,7 +123,7 @@ interface TripTalesApi {
     suspend fun getUserDetails(): Response<UserDTO>  // Rimuovi il parametro token
 
     @GET("api/trip-groups/")
-    suspend fun getMyGroups(): Response<List<GruppoDTO>>
+    suspend fun getMyGroups(): Response<Any>
 
     @GET("api/trip-groups/{id}/")
     suspend fun getGroupDetails(@Path("id") groupId: String): Response<GruppoDTO>

@@ -3,6 +3,7 @@ package com.example.frontend_triptales.ui.theme.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.location.Geocoder
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -48,7 +49,7 @@ import kotlin.random.Random
 fun HomeScreen(userName: String = "Marco") {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
-    val location = rememberUserLocation()
+    val userLocation = rememberUserLocation()
     val scrollState = rememberLazyListState()
     val scrollOffset = remember { derivedStateOf { scrollState.firstVisibleItemScrollOffset } }
     val coroutineScope = rememberCoroutineScope()
@@ -59,18 +60,21 @@ fun HomeScreen(userName: String = "Marco") {
     }
 
     // Stati per posizione e meteo
-    var cityName by remember { mutableStateOf("Rilevamento...") }
+    var cityName by remember { mutableStateOf("Rilevamento posizione...") }
     var weatherData by remember {
         mutableStateOf(
             WeatherData(
                 temperature = 24,
-                condition = "Soleggiato",
+                condition = "Caricamento...",
                 humidity = 65,
                 cityName = "Rilevamento...",
-                icon = Icons.Default.WbSunny
+                icon = Icons.Default.Cloud
             )
         )
     }
+
+    // Stati per luoghi vicini
+    var nearbyPlaces by remember { mutableStateOf<List<PlaceItem>>(emptyList()) }
 
     // Stati per animazioni
     var isWeatherLoaded by remember { mutableStateOf(false) }
@@ -90,8 +94,8 @@ fun HomeScreen(userName: String = "Marco") {
     }
 
     // Aggiorna la città quando otteniamo la posizione
-    LaunchedEffect(location) {
-        if (location != null) {
+    LaunchedEffect(userLocation) {
+        if (userLocation != null) {
             // Verifica se abbiamo i permessi per la localizzazione
             val hasLocationPermission = ContextCompat.checkSelfPermission(
                 context,
@@ -100,49 +104,75 @@ fun HomeScreen(userName: String = "Marco") {
 
             if (hasLocationPermission) {
                 try {
-                    // Ottieni il nome della città usando il Geocoder
-                    val geocoder = Geocoder(context, Locale.getDefault())
+                    // Usa il Geocoder con Locale.ITALY per ottenere i nomi in italiano
+                    val geocoder = Geocoder(context, Locale.ITALY)
 
+                    // Ottieni dettagli località
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                         // Per API 33+
                         geocoder.getFromLocation(
-                            location.latitude,
-                            location.longitude,
+                            userLocation.latitude,
+                            userLocation.longitude,
                             1
                         ) { addresses ->
                             if (addresses.isNotEmpty()) {
                                 val address = addresses[0]
+
+                                // Priorità a località, città, poi area amministrativa
                                 val city = address.locality ?:
                                 address.subAdminArea ?:
                                 address.adminArea ?:
                                 "Posizione rilevata"
 
+                                Log.d("HomeScreen", "Indirizzo completo: ${address.getAddressLine(0)}")
+                                Log.d("HomeScreen", "Località: ${address.locality}, SubAdmin: ${address.subAdminArea}, Admin: ${address.adminArea}")
+
                                 cityName = city
 
-                                // Aggiorna l'oggetto meteo con la nuova città
-                                weatherData = weatherData.copy(cityName = city)
+                                // Ottenere meteo per questa posizione
+                                fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
+                                    weatherData = weatherResult.copy(cityName = city)
+                                }
+
+                                // Ottieni luoghi vicini in base alla posizione reale
+                                getNearbyPlaces(userLocation.latitude, userLocation.longitude, city) { places ->
+                                    nearbyPlaces = places
+                                }
                             }
                         }
                     } else {
                         // Per API < 33
                         @Suppress("DEPRECATION")
-                        val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                        val addresses = geocoder.getFromLocation(userLocation.latitude, userLocation.longitude, 1)
                         if (!addresses.isNullOrEmpty()) {
                             val address = addresses[0]
+
+                            // Priorità a località, città, poi area amministrativa
                             val city = address.locality ?:
                             address.subAdminArea ?:
                             address.adminArea ?:
                             "Posizione rilevata"
 
+                            Log.d("HomeScreen", "Indirizzo completo: ${address.getAddressLine(0)}")
+                            Log.d("HomeScreen", "Località: ${address.locality}, SubAdmin: ${address.subAdminArea}, Admin: ${address.adminArea}")
+
                             cityName = city
 
-                            // Aggiorna l'oggetto meteo con la nuova città
-                            weatherData = weatherData.copy(cityName = city)
+                            // Ottenere meteo per questa posizione
+                            fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
+                                weatherData = weatherResult.copy(cityName = city)
+                            }
+
+                            // Ottieni luoghi vicini in base alla posizione reale
+                            getNearbyPlaces(userLocation.latitude, userLocation.longitude, city) { places ->
+                                nearbyPlaces = places
+                            }
                         }
                     }
                 } catch (e: Exception) {
+                    Log.e("HomeScreen", "Errore geocoding", e)
                     // Fallback in caso di errore
-                    cityName = "Lat: ${location.latitude.toInt()}, Lng: ${location.longitude.toInt()}"
+                    cityName = "Posizione: ${userLocation.latitude.toInt()}°N, ${userLocation.longitude.toInt()}°E"
                     weatherData = weatherData.copy(cityName = cityName)
                 }
             } else {
@@ -194,33 +224,6 @@ fun HomeScreen(userName: String = "Marco") {
                 timestamp = "Ieri",
                 mediaUrl = "https://images.unsplash.com/photo-1555852095-64e7428df0fa",
                 likesCount = 32
-            )
-        )
-    }
-
-    // Luoghi suggeriti
-    val suggestedPlaces = remember {
-        listOf(
-            PlaceItem(
-                id = 1,
-                name = "Parco Archeologico",
-                imageUrl = "https://images.unsplash.com/photo-1516483638261-f4dbaf036963",
-                distance = "850 m",
-                rating = 4.8f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Piazza di Spagna",
-                imageUrl = "https://images.unsplash.com/photo-1523906834658-6e24ef2386f9",
-                distance = "1.2 km",
-                rating = 4.9f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Villa Borghese",
-                imageUrl = "https://images.unsplash.com/photo-1519502358834-4cf4bb3740e1",
-                distance = "2 km",
-                rating = 4.7f
             )
         )
     }
@@ -456,7 +459,7 @@ fun HomeScreen(userName: String = "Marco") {
                 }
             }
 
-            // Intestazione luoghi suggeriti
+            // Intestazione luoghi vicini
             item {
                 AnimatedVisibility(
                     visible = isSuggestionsLoaded,
@@ -471,7 +474,7 @@ fun HomeScreen(userName: String = "Marco") {
                 }
             }
 
-            // Luoghi suggeriti (orizzontale)
+            // Luoghi vicini (orizzontale)
             item {
                 AnimatedVisibility(
                     visible = isSuggestionsLoaded,
@@ -481,8 +484,15 @@ fun HomeScreen(userName: String = "Marco") {
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(suggestedPlaces) { place ->
-                            PlaceCard(place = place)
+                        if (nearbyPlaces.isEmpty()) {
+                            // Mostra luoghi predefiniti mentre si caricano quelli reali
+                            items(getDefaultNearbyPlaces()) { place ->
+                                PlaceCard(place = place)
+                            }
+                        } else {
+                            items(nearbyPlaces) { place ->
+                                PlaceCard(place = place)
+                            }
                         }
                     }
                 }
@@ -590,6 +600,335 @@ fun HomeScreen(userName: String = "Marco") {
             }
         }
     }
+}
+
+/**
+ * Ottiene i dati meteo in base alle coordinate
+ */
+private fun fetchWeatherData(lat: Double, lon: Double, callback: (WeatherData) -> Unit) {
+    // Usare l'API weather per ottenere i dati meteo reali
+    // Per ora usiamo dati simulati
+
+    // Simula varie condizioni meteo in base alla posizione
+    val hash = lat.toInt() * 31 + lon.toInt()
+    val conditions = listOf("Soleggiato", "Nuvoloso", "Parzialmente nuvoloso", "Piovoso", "Temporale", "Ventoso")
+    val randomIndex = Math.abs(hash) % conditions.size
+    val condition = conditions[randomIndex]
+
+    // Temperatura basata sulla latitudine (più caldo a sud)
+    val baseTemp = 30 - (lat / 10).toInt()
+    val temp = baseTemp + (Math.abs(hash) % 10) - 5
+
+    // Calcola l'umidità (30-80%)
+    val humidity = 30 + (Math.abs(hash) % 50)
+
+    // Scegli l'icona appropriata
+    val icon = when (condition) {
+        "Soleggiato" -> Icons.Default.WbSunny
+        "Nuvoloso" -> Icons.Default.Cloud
+        "Parzialmente nuvoloso" -> Icons.Default.FilterDrama
+        "Piovoso" -> Icons.Default.Grain
+        "Temporale" -> Icons.Default.FlashOn
+        else -> Icons.Default.Air // Ventoso
+    }
+
+    // Crea oggetto meteo
+    val weatherData = WeatherData(
+        temperature = temp.toInt(),
+        condition = condition,
+        humidity = humidity,
+        cityName = "", // Sarà impostato dal chiamante
+        icon = icon
+    )
+
+    callback(weatherData)
+}
+
+/**
+ * Fornisce luoghi predefiniti mentre si caricano quelli reali
+ */
+private fun getDefaultNearbyPlaces(): List<PlaceItem> {
+    return listOf(
+        PlaceItem(
+            id = 1,
+            name = "Caricamento...",
+            imageUrl = "https://images.unsplash.com/photo-1516483638261-f4dbaf036963",
+            distance = "...",
+            rating = 4.5f
+        ),
+        PlaceItem(
+            id = 2,
+            name = "Caricamento...",
+            imageUrl = "https://images.unsplash.com/photo-1523906834658-6e24ef2386f9",
+            distance = "...",
+            rating = 4.3f
+        ),
+        PlaceItem(
+            id = 3,
+            name = "Caricamento...",
+            imageUrl = "https://images.unsplash.com/photo-1519502358834-4cf4bb3740e1",
+            distance = "...",
+            rating = 4.0f
+        )
+    )
+}
+
+/**
+ * Ottiene luoghi vicini in base alla posizione
+ */
+private fun getNearbyPlaces(lat: Double, lon: Double, city: String, callback: (List<PlaceItem>) -> Unit) {
+    // Qui dovresti integrare con un'API per luoghi vicini come Google Places
+    // Per ora simuliamo luoghi basati sulla città reale
+
+    // Definisci luoghi per diverse città italiane
+    val placesByCity = mapOf(
+        "Roma" to listOf(
+            PlaceItem(
+                id = 1,
+                name = "Colosseo",
+                imageUrl = "https://images.unsplash.com/photo-1552832230-c0197dd311b5",
+                distance = "1.2 km",
+                rating = 4.9f
+            ),
+            PlaceItem(
+                id = 2,
+                name = "Fontana di Trevi",
+                imageUrl = "https://images.unsplash.com/photo-1525874684015-58379d421a52",
+                distance = "0.8 km",
+                rating = 4.8f
+            ),
+            PlaceItem(
+                id = 3,
+                name = "Pantheon",
+                imageUrl = "https://images.unsplash.com/photo-1552484604-541f2d423d46",
+                distance = "1.5 km",
+                rating = 4.7f
+            )
+        ),
+        "Milano" to listOf(
+            PlaceItem(
+                id = 1,
+                name = "Duomo di Milano",
+                imageUrl = "https://images.unsplash.com/photo-1603788397410-5e108c93be53",
+                distance = "0.5 km",
+                rating = 4.9f
+            ),
+            PlaceItem(
+                id = 2,
+                name = "Galleria Vittorio Emanuele",
+                imageUrl = "https://images.unsplash.com/photo-1595870811635-1b043d4cf5ee",
+                distance = "0.7 km",
+                rating = 4.7f
+            ),
+            PlaceItem(
+                id = 3,
+                name = "Castello Sforzesco",
+                imageUrl = "https://images.unsplash.com/photo-1574411863833-5e85a998c55c",
+                distance = "1.8 km",
+                rating = 4.6f
+            )
+        ),
+        "Venezia" to listOf(
+            PlaceItem(
+                id = 1,
+                name = "Piazza San Marco",
+                imageUrl = "https://images.unsplash.com/photo-1566019422381-1f89201e845a",
+                distance = "0.3 km",
+                rating = 4.9f
+            ),
+            PlaceItem(
+                id = 2,
+                name = "Ponte di Rialto",
+                imageUrl = "https://images.unsplash.com/photo-1580413787283-3a4bef61919d",
+                distance = "0.9 km",
+                rating = 4.8f
+            ),
+            PlaceItem(
+                id = 3,
+                name = "Canal Grande",
+                imageUrl = "https://images.unsplash.com/photo-1560426774-5cf70690a1e8",
+                distance = "0.5 km",
+                rating = 4.7f
+            )
+        ),
+        "Firenze" to listOf(
+            PlaceItem(
+                id = 1,
+                name = "Cattedrale di Santa Maria del Fiore",
+                imageUrl = "https://images.unsplash.com/photo-1543429257-3eb0b65d9c58",
+                distance = "0.6 km",
+                rating = 4.9f
+            ),
+            PlaceItem(
+                id = 2,
+                name = "Ponte Vecchio",
+                imageUrl = "https://images.unsplash.com/photo-1543637958-1a4e82beb9c0",
+                distance = "1.2 km",
+                rating = 4.8f
+            ),
+            PlaceItem(
+                id = 3,
+                name = "Galleria degli Uffizi",
+                imageUrl = "https://images.unsplash.com/photo-1498575637358-821023f27355",
+                distance = "1.3 km",
+                rating = 4.9f
+            )
+        ),
+        "Napoli" to listOf(
+            PlaceItem(
+                id = 1,
+                name = "Vesuvio",
+                imageUrl = "https://images.unsplash.com/photo-1593349344484-a503bd0aa258",
+                distance = "10 km",
+                rating = 4.7f
+            ),
+            PlaceItem(
+                id = 2,
+                name = "Castel dell'Ovo",
+                imageUrl = "https://images.unsplash.com/photo-1518687820821-fb7df300543c",
+                distance = "2.1 km",
+                rating = 4.5f
+            ),
+            PlaceItem(
+                id = 3,
+                name = "Spaccanapoli",
+                imageUrl = "https://images.unsplash.com/photo-1527206363095-ca04626bd3ac",
+                distance = "1.5 km",
+                rating = 4.6f
+            )
+        ),
+        // Treviso - vicino a Malo, Veneto
+        "Treviso" to listOf(
+            PlaceItem(
+                id = 1,
+                name = "Piazza dei Signori",
+                imageUrl = "https://images.unsplash.com/photo-1608641947760-2e746568d960",
+                distance = "0.5 km",
+                rating = 4.6f
+            ),
+            PlaceItem(
+                id = 2,
+                name = "Canali del Sile",
+                imageUrl = "https://images.unsplash.com/photo-1629204132257-001f5cf2d5f0",
+                distance = "0.9 km",
+                rating = 4.7f
+            ),
+            PlaceItem(
+                id = 3,
+                name = "Palazzo dei Trecento",
+                imageUrl = "https://images.unsplash.com/photo-1629204071370-5e66b7343752",
+                distance = "0.7 km",
+                rating = 4.5f
+            )
+        ),
+        // Vicenza - vicino a Malo, Veneto
+        "Vicenza" to listOf(
+            PlaceItem(
+                id = 1,
+                name = "Basilica Palladiana",
+                imageUrl = "https://images.unsplash.com/photo-1594394844134-5dcc431175b5",
+                distance = "0.4 km",
+                rating = 4.8f
+            ),
+            PlaceItem(
+                id = 2,
+                name = "Teatro Olimpico",
+                imageUrl = "https://images.unsplash.com/photo-1533590541495-35e9d8297160",
+                distance = "0.8 km",
+                rating = 4.7f
+            ),
+            PlaceItem(
+                id = 3,
+                name = "Villa Almerico Capra",
+                imageUrl = "https://images.unsplash.com/photo-1553889676-0f710e4aafc1",
+                distance = "4.2 km",
+                rating = 4.9f
+            )
+        ),
+        // Malo - la posizione dell'utente
+        "Malo" to listOf(
+            PlaceItem(
+                id = 1,
+                name = "Duomo di Malo",
+                imageUrl = "https://images.unsplash.com/photo-1548353496-8a9b3c3a4425",
+                distance = "0.3 km",
+                rating = 4.5f
+            ),
+            PlaceItem(
+                id = 2,
+                name = "Museo della Civiltà Rurale",
+                imageUrl = "https://images.unsplash.com/photo-1566004100631-35d015d6a491",
+                distance = "1.2 km",
+                rating = 4.3f
+            ),
+            PlaceItem(
+                id = 3,
+                name = "Parco di Villa Clementi",
+                imageUrl = "https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7",
+                distance = "0.8 km",
+                rating = 4.6f
+            )
+        )
+    )
+
+    // Trova la città più vicina in base al nome
+    val cities = placesByCity.keys.toList()
+
+    // Cerca corrispondenza esatta o parziale
+    val matchedCity = cities.find {
+        city.contains(it, ignoreCase = true) || it.contains(city, ignoreCase = true)
+    }
+
+    // Se abbiamo trovato una corrispondenza, usa quei luoghi
+    if (matchedCity != null && placesByCity.containsKey(matchedCity)) {
+        Log.d("HomeScreen", "Trovati luoghi vicini per $matchedCity")
+        callback(placesByCity[matchedCity]!!)
+        return
+    }
+
+    // Se non troviamo una corrispondenza, genera luoghi dinamici basati sulle coordinate
+    Log.d("HomeScreen", "Generando luoghi dinamici per $city (coordinate: $lat, $lon)")
+
+    // Generiamo nomi dinamici basati sulla regione/città
+    val placeNames = listOf(
+        "Piazza $city",
+        "Parco Comunale",
+        "Museo Civico",
+        "Ponte $city",
+        "Villa Storica",
+        "Cattedrale di $city",
+        "Castello Antico",
+        "Giardini Pubblici"
+    )
+
+    // Generiamo distanze casuali, ma realistiche
+    val distances = listOf("0.3 km", "0.7 km", "1.2 km", "0.8 km", "1.5 km")
+
+    // Immagini generiche per vari tipi di luoghi
+    val placeImages = listOf(
+        "https://images.unsplash.com/photo-1519502358834-4cf4bb3740e1", // Parco
+        "https://images.unsplash.com/photo-1577334928618-652def2c98ad", // Piazza
+        "https://images.unsplash.com/photo-1580414057403-c5f451f30e1c", // Museo
+        "https://images.unsplash.com/photo-1548760106-0d557aa49ec9", // Monumento
+        "https://images.unsplash.com/photo-1556194622-ecdff147de3a"  // Castello
+    )
+
+    // Genera 3 luoghi casuali
+    val dynamicPlaces = List(3) { idx ->
+        val nameIdx = (idx + (lat + lon).toInt()) % placeNames.size
+        val distanceIdx = (idx + lat.toInt()) % distances.size
+        val imageIdx = (idx + lon.toInt()) % placeImages.size
+
+        PlaceItem(
+            id = idx + 1,
+            name = placeNames[nameIdx].replace("$city", city),
+            imageUrl = placeImages[imageIdx],
+            distance = distances[distanceIdx],
+            rating = 4.0f + (idx * 0.3f).coerceAtMost(0.9f)  // Rating da 4.0 a 4.9
+        )
+    }
+
+    callback(dynamicPlaces)
 }
 
 @Composable
