@@ -14,22 +14,21 @@ class SessionManager(context: Context) {
     companion object {
         const val PREF_NAME = "TripTalesPrefs"
         const val IS_LOGIN = "IsLoggedIn"
-        const val KEY_TOKEN = "token"  // oppure "access" se hai cambiato
+        const val KEY_TOKEN = "token"
         const val KEY_REFRESH_TOKEN = "refreshToken"
         const val KEY_USERNAME = "username"
-        const val KEY_FIRST_NAME = "firstName" // Aggiungiamo questa costante
+        const val KEY_FIRST_NAME = "firstName"
+        const val KEY_USER_ID = "userId"  // Aggiunta questa costante
     }
 
-    /**
-     * Salva i dati di login dopo un'autenticazione riuscita
-     */
     fun salvaLoginUtente(username: String, rispostaLogin: RispostaLogin) {
         editor.putBoolean(IS_LOGIN, true)
         editor.putString(KEY_USERNAME, username)
-        editor.putString(KEY_TOKEN, rispostaLogin.access)    // Cambia da token a access
+        editor.putString(KEY_TOKEN, rispostaLogin.access)
         editor.putString(KEY_REFRESH_TOKEN, rispostaLogin.refresh)
         editor.apply()
     }
+
 
     /**
      * Controlla se l'utente è attualmente loggato
@@ -66,15 +65,21 @@ class SessionManager(context: Context) {
         editor.clear()
         editor.apply()
     }
-    fun salvaInfoUtente(username: String, firstName: String, rispostaLogin: RispostaLogin) {
+
+    fun salvaInfoUtente(userId: String, username: String, firstName: String, rispostaLogin: RispostaLogin) {
         editor.putBoolean(IS_LOGIN, true)
+        editor.putString(KEY_USER_ID, userId)  // Salviamo l'ID utente
         editor.putString(KEY_USERNAME, username)
-        editor.putString(KEY_FIRST_NAME, firstName) // Salviamo il nome
-        editor.putString(KEY_TOKEN, rispostaLogin.access) // o token, in base a come l'hai aggiornato
+        editor.putString(KEY_FIRST_NAME, firstName ?: "")
+        editor.putString(KEY_TOKEN, rispostaLogin.access)
         editor.putString(KEY_REFRESH_TOKEN, rispostaLogin.refresh)
         editor.apply()
     }
+
     fun getFirstName(): String {
         return prefs.getString(KEY_FIRST_NAME, "") ?: ""
+    }
+    fun getUserId(): String? {
+        return prefs.getString(KEY_USER_ID, null)
     }
 }

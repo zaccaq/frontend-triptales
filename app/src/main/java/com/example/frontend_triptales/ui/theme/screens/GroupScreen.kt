@@ -1,3 +1,4 @@
+// app/src/main/java/com/example/frontend_triptales/ui/theme/screens/GroupScreen.kt
 package com.example.frontend_triptales.ui.theme.screens
 
 import androidx.compose.foundation.background
@@ -10,15 +11,27 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend_triptales.api.ServizioApi
+import com.example.frontend_triptales.auth.SessionManager
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
+
+data class GroupItem(
+    val id: String,
+    val name: String,
+    val lastActivity: String,
+    val memberCount: Int
+)
 
 @Composable
 fun GroupScreen(
@@ -26,13 +39,44 @@ fun GroupScreen(
     onJoinGroupClick: () -> Unit,
     onGroupClick: (String) -> Unit
 ) {
-    // Gruppi fittizi per la demo
-    val groups = remember {
-        listOf(
-            GroupItem("1", "Vacanza in Sicilia", "Ultima attività: 2 ore fa", 5),
-            GroupItem("2", "Weekend in montagna", "Ultima attività: ieri", 3),
-            GroupItem("3", "Gita scolastica Parigi", "Ultima attività: 3 giorni fa", 15)
-        )
+    val context = LocalContext.current
+    val sessionManager = remember { SessionManager(context) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Stato per i gruppi
+    var groups by remember { mutableStateOf<List<GroupItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Carica i gruppi dell'utente
+    LaunchedEffect(Unit) {
+        coroutineScope.launch {
+            try {
+                isLoading = true
+                errorMessage = null
+
+                val api = ServizioApi.getAuthenticatedClient(context)
+                val response = api.getMyGroups()
+
+                if (response.isSuccessful && response.body() != null) {
+                    // Converte la risposta API in oggetti GroupItem
+                    groups = response.body()!!.map { group ->
+                        GroupItem(
+                            id = group.id.toString(),
+                            name = group.name,
+                            lastActivity = formatLastActivity(group.lastActivityDate),
+                            memberCount = group.memberCount
+                        )
+                    }
+                } else {
+                    errorMessage = "Errore nel caricamento dei gruppi"
+                }
+            } catch (e: Exception) {
+                errorMessage = "Errore di connessione: ${e.message}"
+            } finally {
+                isLoading = false
+            }
+        }
     }
 
     Column(
@@ -47,7 +91,33 @@ fun GroupScreen(
             modifier = Modifier.padding(vertical = 16.dp)
         )
 
-        if (groups.isEmpty()) {
+        if (isLoading) {
+            // Mostra un indicatore di caricamento
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                CircularProgressIndicator(color = Color(0xFF5AC8FA))
+            }
+        } else if (errorMessage != null) {
+            // Mostra errore
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    errorMessage!!,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        } else if (groups.isEmpty()) {
+            // Nessun gruppo trovato
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -62,6 +132,7 @@ fun GroupScreen(
                 )
             }
         } else {
+            // Mostra la lista dei gruppi
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -101,12 +172,55 @@ fun GroupScreen(
     }
 }
 
-data class GroupItem(
-    val id: String,
-    val name: String,
-    val lastActivity: String,
-    val memberCount: Int
-)
+// Formatta la data dell'ultima attività in un formato leggibile
+private fun formatLastActivity(dateString: String?): String {
+    if (dateString == null) return "Nessuna attività"
+
+    try {
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS", Locale.getDefault())
+        val date = inputFormat.parse(dateString)
+
+        // Calcola la differenza con la data corrente
+        val now = Calendar.getInstance()
+        val activityTime = Calendar.getInstance()
+        activityTime.time = date
+
+        // Stessa data
+        return when {
+            now.get(Calendar.DATE) == activityTime.get(Calendar.DATE) &&
+                    now.get(Calendar.MONTH) == activityTime.get(Calendar.MONTH) &&
+                    now.get(Calendar.YEAR) == activityTime.get(Calendar.YEAR) -> {
+                val hourDiff = now.get(Calendar.HOUR_OF_DAY) - activityTime.get(Calendar.HOUR_OF_DAY)
+                when {
+                    hourDiff == 0 -> {
+                        val minuteDiff = now.get(Calendar.MINUTE) - activityTime.get(Calendar.MINUTE)
+                        if (minuteDiff < 5) "Pochi minuti fa" else "$minuteDiff minuti fa"
+                    }
+                    hourDiff == 1 -> "1 ora fa"
+                    hourDiff < 12 -> "$hourDiff ore fa"
+                    else -> "Oggi"
+                }
+            }
+            // Ieri
+            now.get(Calendar.DATE) - activityTime.get(Calendar.DATE) == 1 &&
+                    now.get(Calendar.MONTH) == activityTime.get(Calendar.MONTH) &&
+                    now.get(Calendar.YEAR) == activityTime.get(Calendar.YEAR) -> "Ieri"
+            // Questa settimana
+            now.get(Calendar.WEEK_OF_YEAR) == activityTime.get(Calendar.WEEK_OF_YEAR) &&
+                    now.get(Calendar.YEAR) == activityTime.get(Calendar.YEAR) -> {
+                val dayFormat = SimpleDateFormat("EEEE", Locale.ITALIAN)
+                dayFormat.format(date)
+            }
+            // Altro
+            else -> {
+                val dateFormat = SimpleDateFormat("dd MMM", Locale.ITALIAN)
+                dateFormat.format(date)
+            }
+        }
+    } catch (e: Exception) {
+        return "Data sconosciuta"
+    }
+}
 
 @Composable
 fun GroupCard(group: GroupItem, onClick: () -> Unit) {
@@ -147,7 +261,7 @@ fun GroupCard(group: GroupItem, onClick: () -> Unit) {
                     fontSize = 18.sp
                 )
                 Text(
-                    text = group.lastActivity,
+                    text = "Ultima attività: ${group.lastActivity}",
                     color = Color.Gray,
                     fontSize = 14.sp
                 )

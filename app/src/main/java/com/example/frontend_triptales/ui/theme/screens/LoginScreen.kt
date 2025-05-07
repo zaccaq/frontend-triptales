@@ -113,6 +113,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
 
                             // Effettua il login tramite API
                             coroutineScope.launch {
+                                // Sostituisci il blocco try nella funzione di login
                                 try {
                                     isLoading = true
                                     errorMessage = null
@@ -127,31 +128,30 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
 
                                     if (risposta.isSuccessful) {
                                         val tokenResponse = risposta.body()
-                                        if (tokenResponse?.access != null) { // o token, in base a come l'hai aggiornato
+                                        if (tokenResponse?.access != null) {
                                             // Salva il token di accesso
                                             val sessionManager = SessionManager(context)
+                                            sessionManager.salvaLoginUtente(usernameOrEmail, tokenResponse)
 
                                             // Otteniamo i dettagli dell'utente
                                             try {
-                                                val token = "Bearer ${tokenResponse.access}" // o token
-                                                val userResponse = ServizioApi.getAuthenticatedClient(context)
-                                                    .getUserDetails(token)
+                                                // Usando il client autenticato che includerà automaticamente il token
+                                                val authenticatedClient = ServizioApi.getAuthenticatedClient(context)
+                                                val userResponse = authenticatedClient.getUserDetails()
 
                                                 if (userResponse.isSuccessful && userResponse.body() != null) {
                                                     val userDetails = userResponse.body()!!
-                                                    // Salviamo tutte le info dell'utente
+                                                    // Aggiorniamo le informazioni utente con l'ID e il nome
                                                     sessionManager.salvaInfoUtente(
+                                                        userId = userDetails.id.toString(),  // Convertiamo l'ID numerico in stringa
                                                         username = userDetails.username,
-                                                        firstName = userDetails.first_name,
+                                                        firstName = userDetails.first_name ?: "",
                                                         rispostaLogin = tokenResponse
                                                     )
-                                                } else {
-                                                    // Se non riusciamo a ottenere i dettagli, salviamo solo username e token
-                                                    sessionManager.salvaLoginUtente(usernameOrEmail, tokenResponse)
                                                 }
                                             } catch (e: Exception) {
-                                                // In caso di errore, salviamo solo username e token
-                                                sessionManager.salvaLoginUtente(usernameOrEmail, tokenResponse)
+                                                Log.e("LoginScreen", "Errore nel recupero dei dettagli utente", e)
+                                                // Continuiamo comunque, poiché il login è riuscito
                                             }
 
                                             Toast.makeText(context, "Login effettuato con successo!", Toast.LENGTH_LONG).show()
@@ -160,6 +160,10 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                                             errorMessage = "Token non valido nella risposta"
                                             Toast.makeText(context, "Errore: Token non valido", Toast.LENGTH_LONG).show()
                                         }
+                                    } else {
+                                        val errore = risposta.errorBody()?.string() ?: "Credenziali non valide"
+                                        errorMessage = "Errore: $errore"
+                                        Toast.makeText(context, "Errore: $errore", Toast.LENGTH_LONG).show()
                                     }
                                 } catch (e: Exception) {
                                     errorMessage = "Errore di connessione: ${e.message}"

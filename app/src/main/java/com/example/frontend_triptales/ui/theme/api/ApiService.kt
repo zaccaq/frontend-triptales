@@ -3,15 +3,21 @@ package com.example.frontend_triptales.api
 import android.content.Context
 import com.example.frontend_triptales.auth.SessionManager
 import okhttp3.Interceptor
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
 import retrofit2.http.POST
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.Multipart
+import retrofit2.http.Part
 import retrofit2.http.Path
 
 // Modelli di dati
@@ -34,7 +40,7 @@ data class RichiestaLogin(
 )
 
 data class RispostaLogin(
-    val access: String? = null,    // Cambia da token a access
+    val access: String? = null,    // Cambiato da token a access
     val refresh: String? = null,
     val error: String? = null
 )
@@ -46,16 +52,104 @@ data class UserDetailsResponse(
     val first_name: String,
     val last_name: String
 )
-// Interfaccia API
-interface TripTalesApi {
-    @POST("register/")
-    suspend fun registrazione(@Body richiesta: RichiestaRegistrazione): Response<RispostaRegistrazione>
 
+data class PostMediaResponse(
+    val id: Int,
+    val media_url: String,
+    val media_type: String
+)
+
+data class GruppoDTO(
+    val id: Int,
+    val name: String,
+    val description: String,
+    val cover_image: String?,
+    val start_date: String,
+    val end_date: String,
+    val location: String,
+    val created_by: UserDTO,
+    val created_at: String,
+    val member_count: Int,
+    val memberCount: Int = member_count, // Aggiungiamo questo alias
+    val lastActivityDate: String? = null
+)
+
+data class UserDTO(
+    val id: Int,
+    val username: String,
+    val email: String?,
+    val profile_picture: String?,
+    val first_name: String?,  // Assicurati che sia nullable
+    val last_name: String?
+)
+
+
+
+data class GroupMembershipDTO(
+    val id: Int,
+    val user: UserDTO,
+    val group: GruppoDTO,
+    val join_date: String,
+    val role: String
+)
+
+data class MessageDTO(
+    val id: Int,
+    val group: Int,
+    val author: UserDTO,
+    val content: String,
+    val created_at: String,
+    val media: List<PostMediaDTO>?,
+    val is_chat_message: Boolean
+)
+
+data class PostMediaDTO(
+    val id: Int,
+    val media_type: String,
+    val media_url: String,
+    val created_at: String
+)
+
+// Aggiungi queste interfacce all'interfaccia TripTalesApi
+interface TripTalesApi {
+    // ... codice esistente ...
     @POST("api/token/")
     suspend fun login(@Body richiesta: RichiestaLogin): Response<RispostaLogin>
 
     @GET("api/users/me/")
-    suspend fun getUserDetails(@Header("Authorization") token: String): Response<UserDetailsResponse>
+    suspend fun getUserDetails(): Response<UserDTO>  // Rimuovi il parametro token
+
+    @GET("api/trip-groups/")
+    suspend fun getMyGroups(): Response<List<GruppoDTO>>
+
+    @GET("api/trip-groups/{id}/")
+    suspend fun getGroupDetails(@Path("id") groupId: String): Response<GruppoDTO>
+
+    @GET("api/trip-groups/{id}/messages/")
+    suspend fun getGroupMessages(@Path("id") groupId: String): Response<List<MessageDTO>>
+
+    @GET("api/trip-groups/{id}/members/")
+    suspend fun getGroupMembers(@Path("id") groupId: String): Response<List<GroupMembershipDTO>>
+
+    @FormUrlEncoded
+    @POST("api/trip-groups/{id}/send_message/")
+    suspend fun sendMessage(
+        @Path("id") groupId: String,
+        @Field("content") content: String
+    ): Response<MessageDTO>
+
+    @Multipart
+    @POST("api/post-media/upload_chat_image/")
+    suspend fun uploadChatImage(
+        @Part("group_id") groupId: RequestBody,
+        @Part image: MultipartBody.Part
+    ): Response<PostMediaDTO>
+
+    @POST("api/trip-groups/")
+    suspend fun createGroup(@Body groupData: Map<String, Any>): Response<GruppoDTO>
+
+    @POST("api/trip-groups/{id}/join/")
+    suspend fun joinGroup(@Path("id") groupId: String): Response<GroupMembershipDTO>
 }
 
 // Singleton del servizio API

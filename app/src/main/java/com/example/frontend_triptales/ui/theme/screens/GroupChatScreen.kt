@@ -1,3 +1,4 @@
+// app/src/main/java/com/example/frontend_triptales/ui/theme/screens/GroupChatScreen.kt
 package com.example.frontend_triptales.ui.theme.screens
 
 import android.content.Context
@@ -29,19 +30,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import coil.compose.rememberAsyncImagePainter
+import com.example.frontend_triptales.auth.SessionManager
+import com.example.frontend_triptales.ui.theme.chat.ChatService
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-
-data class ChatMessage(
-    val id: String,
-    val senderId: String,
-    val senderName: String,
-    val content: String,
-    val timestamp: Long,
-    val isCurrentUser: Boolean,
-    val imageUri: Uri? = null
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,52 +44,74 @@ fun GroupChatScreen(
     groupId: String,
     onBackClick: () -> Unit
 ) {
-    val groupName = remember(groupId) {
+    val context = LocalContext.current
+    val sessionManager = remember { SessionManager(context) }
+    val chatService = remember { ChatService(sessionManager) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Stato per i messaggi
+    val messagesList = remember { mutableStateListOf<ChatService.ChatMessage>() }
+    var newMessage by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val imageUri = remember { mutableStateOf<Uri?>(null) }
+
+    // Stato per il nome del gruppo
+    var groupName by remember { mutableStateOf("Gruppo $groupId") }
+
+    // Effettua il fetch del nome del gruppo
+    LaunchedEffect(groupId) {
+        // API call per ottenere i dettagli del gruppo
+        // Per ora utilizziamo un placeholder
         when (groupId) {
-            "1" -> "Vacanza in Sicilia"
-            "2" -> "Weekend in montagna"
-            "3" -> "Gita scolastica Parigi"
-            else -> "Gruppo $groupId"
+            "1" -> groupName = "Vacanza in Sicilia"
+            "2" -> groupName = "Weekend in montagna"
+            "3" -> groupName = "Gita scolastica Parigi"
         }
     }
 
-    val context = LocalContext.current
-    val imageUri = remember { mutableStateOf<Uri?>(null) }
-    val messagesList = remember {
-        mutableStateListOf(
-            ChatMessage("1", "user1", "Marco", "Ciao a tutti! Chi è pronto per il viaggio?", System.currentTimeMillis() - 3600000, false),
-            ChatMessage("2", "user2", "Laura", "Io sono pronta! Ho già fatto le valigie.", System.currentTimeMillis() - 3500000, false),
-            ChatMessage("3", "me", "Tu", "Io devo ancora organizzarmi, ma ci sarò!", System.currentTimeMillis() - 3400000, true)
-        )
+    // Connessione al WebSocket per la chat
+    LaunchedEffect(groupId) {
+        chatService.connectToChat(groupId)
+
+        // Raccolta dei messaggi in arrivo
+        coroutineScope.launch {
+            chatService.messages.collectLatest { message ->
+                messagesList.add(message)
+                // Scroll automatico quando arriva un nuovo messaggio
+                listState.animateScrollToItem(messagesList.size - 1)
+            }
+        }
     }
 
-    var newMessage by remember { mutableStateOf("") }
-    val listState = rememberLazyListState()
+    // Effetto di pulizia quando si lascia la schermata
+    DisposableEffect(Unit) {
+        onDispose {
+            chatService.disconnect()
+        }
+    }
 
+    // Scorrimento automatico quando si aggiungono messaggi
     LaunchedEffect(messagesList.size) {
         if (messagesList.isNotEmpty()) {
             listState.scrollToItem(messagesList.size - 1)
         }
     }
 
+    // Launcher per la fotocamera
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && imageUri.value != null) {
-            messagesList.add(
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = "me",
-                    senderName = "Tu",
-                    content = "",
-                    timestamp = System.currentTimeMillis(),
-                    isCurrentUser = true,
-                    imageUri = imageUri.value
-                )
-            )
+            // Upload dell'immagine e invio tramite chat
+            coroutineScope.launch {
+                // Qui andrebbe implementato l'upload dell'immagine
+                // Per ora, inviamo solo l'URI locale
+                chatService.sendImageMessage(imageUri.value.toString())
+            }
         }
     }
 
+    // Funzione per creare un URI per l'immagine scattata
     fun createImageUri(context: Context): Uri {
         val file = File(context.cacheDir, "${System.currentTimeMillis()}.jpg")
         return FileProvider.getUriForFile(
@@ -187,16 +204,7 @@ fun GroupChatScreen(
                 IconButton(
                     onClick = {
                         if (newMessage.isNotBlank()) {
-                            messagesList.add(
-                                ChatMessage(
-                                    id = UUID.randomUUID().toString(),
-                                    senderId = "me",
-                                    senderName = "Tu",
-                                    content = newMessage,
-                                    timestamp = System.currentTimeMillis(),
-                                    isCurrentUser = true
-                                )
-                            )
+                            chatService.sendTextMessage(newMessage)
                             newMessage = ""
                         }
                     },
@@ -212,13 +220,20 @@ fun GroupChatScreen(
 }
 
 @Composable
-fun ChatMessageItem(message: ChatMessage) {
+fun ChatMessageItem(message: ChatService.ChatMessage) {
     val alignment = if (message.isCurrentUser) Alignment.End else Alignment.Start
     val bubbleColor = if (message.isCurrentUser) Color(0xFF5AC8FA) else Color(0xFFEEEEEE)
     val textColor = if (message.isCurrentUser) Color.White else Color.Black
 
+    // Formatta l'ora del messaggio
     val time = remember(message.timestamp) {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp))
+        try {
+            val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS", Locale.getDefault())
+                .parse(message.timestamp)
+            SimpleDateFormat("HH:mm", Locale.getDefault()).format(date ?: Date())
+        } catch (e: Exception) {
+            "ora"
+        }
     }
 
     Column(
@@ -249,9 +264,9 @@ fun ChatMessageItem(message: ChatMessage) {
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Column {
-                message.imageUri?.let {
+                message.imageUrl?.let { imageUrl ->
                     Image(
-                        painter = rememberAsyncImagePainter(it),
+                        painter = rememberAsyncImagePainter(imageUrl),
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxWidth(0.7f)
