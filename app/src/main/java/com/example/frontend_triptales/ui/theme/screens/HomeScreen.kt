@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.frontend_triptales.auth.SessionManager
 import kotlinx.coroutines.launch
 import java.util.*
 import kotlin.random.Random
@@ -46,10 +47,16 @@ import kotlin.random.Random
 @Composable
 fun HomeScreen(userName: String = "Marco") {
     val context = LocalContext.current
+    val sessionManager = remember { SessionManager(context) }
     val location = rememberUserLocation()
     val scrollState = rememberLazyListState()
     val scrollOffset = remember { derivedStateOf { scrollState.firstVisibleItemScrollOffset } }
     val coroutineScope = rememberCoroutineScope()
+
+    val firstName = remember {
+        val name = sessionManager.getFirstName()
+        if (name.isNotBlank()) name else sessionManager.getUsername() ?: "Utente"
+    }
 
     // Stati per posizione e meteo
     var cityName by remember { mutableStateOf("Rilevamento...") }
@@ -300,7 +307,7 @@ fun HomeScreen(userName: String = "Marco") {
                     ) {
                         Column {
                             Text(
-                                text = "Ciao, ${userName} 👋",
+                                text = "Ciao, ${firstName} 👋",
                                 fontSize = 28.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White

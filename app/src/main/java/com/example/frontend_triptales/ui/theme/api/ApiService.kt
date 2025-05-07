@@ -11,6 +11,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Path
 
 // Modelli di dati
@@ -33,11 +34,18 @@ data class RichiestaLogin(
 )
 
 data class RispostaLogin(
-    val token: String? = null,
+    val access: String? = null,    // Cambia da token a access
     val refresh: String? = null,
     val error: String? = null
 )
 
+data class UserDetailsResponse(
+    val id: Int,
+    val username: String,
+    val email: String,
+    val first_name: String,
+    val last_name: String
+)
 // Interfaccia API
 interface TripTalesApi {
     @POST("register/")
@@ -45,6 +53,9 @@ interface TripTalesApi {
 
     @POST("api/token/")
     suspend fun login(@Body richiesta: RichiestaLogin): Response<RispostaLogin>
+
+    @GET("api/users/me/")
+    suspend fun getUserDetails(@Header("Authorization") token: String): Response<UserDetailsResponse>
 }
 
 // Singleton del servizio API

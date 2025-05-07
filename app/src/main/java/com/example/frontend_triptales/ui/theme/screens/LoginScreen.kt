@@ -1,5 +1,6 @@
 package com.example.frontend_triptales.ui.theme.screens
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -102,6 +103,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                         )
                     }
 
+                    // Aggiornamento nel click del pulsante di login nella funzione LoginScreen
                     Button(
                         onClick = {
                             if (usernameOrEmail.isBlank() || password.isBlank()) {
@@ -121,17 +123,43 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                                     )
 
                                     val risposta = ServizioApi.api.login(richiesta)
+                                    Log.d("LoginDebug", "Risposta: ${risposta.body()}")
 
-                                    if (risposta.isSuccessful && risposta.body()?.token != null) {
-                                        // Salva la sessione dell'utente
-                                        val sessionManager = SessionManager(context)
-                                        sessionManager.salvaLoginUtente(usernameOrEmail, risposta.body()!!)
-                                        Toast.makeText(context, "Login effettuato con successo!", Toast.LENGTH_LONG).show()
-                                        onLoginSuccess()
-                                    } else {
-                                        val errore = risposta.errorBody()?.string() ?: "Credenziali non valide"
-                                        errorMessage = "Errore: $errore"
-                                        Toast.makeText(context, "Errore: $errore", Toast.LENGTH_LONG).show()
+                                    if (risposta.isSuccessful) {
+                                        val tokenResponse = risposta.body()
+                                        if (tokenResponse?.access != null) { // o token, in base a come l'hai aggiornato
+                                            // Salva il token di accesso
+                                            val sessionManager = SessionManager(context)
+
+                                            // Otteniamo i dettagli dell'utente
+                                            try {
+                                                val token = "Bearer ${tokenResponse.access}" // o token
+                                                val userResponse = ServizioApi.getAuthenticatedClient(context)
+                                                    .getUserDetails(token)
+
+                                                if (userResponse.isSuccessful && userResponse.body() != null) {
+                                                    val userDetails = userResponse.body()!!
+                                                    // Salviamo tutte le info dell'utente
+                                                    sessionManager.salvaInfoUtente(
+                                                        username = userDetails.username,
+                                                        firstName = userDetails.first_name,
+                                                        rispostaLogin = tokenResponse
+                                                    )
+                                                } else {
+                                                    // Se non riusciamo a ottenere i dettagli, salviamo solo username e token
+                                                    sessionManager.salvaLoginUtente(usernameOrEmail, tokenResponse)
+                                                }
+                                            } catch (e: Exception) {
+                                                // In caso di errore, salviamo solo username e token
+                                                sessionManager.salvaLoginUtente(usernameOrEmail, tokenResponse)
+                                            }
+
+                                            Toast.makeText(context, "Login effettuato con successo!", Toast.LENGTH_LONG).show()
+                                            onLoginSuccess()
+                                        } else {
+                                            errorMessage = "Token non valido nella risposta"
+                                            Toast.makeText(context, "Errore: Token non valido", Toast.LENGTH_LONG).show()
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     errorMessage = "Errore di connessione: ${e.message}"

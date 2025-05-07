@@ -4,10 +4,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import com.example.frontend_triptales.auth.SessionManager
 import com.example.frontend_triptales.ui.theme.screens.*
 
 @Composable
@@ -15,6 +17,8 @@ fun TripTalesApp() {
     val navController = rememberNavController()
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
+    val context = LocalContext.current
+    val sessionManager = remember { SessionManager(context) }
 
     val bottomBarScreens = listOf(Screen.Home, Screen.Group, Screen.Map)
 
@@ -64,7 +68,14 @@ fun TripTalesApp() {
                     onNavigateToLogin = { navController.popBackStack() }
                 )
             }
-            composable(Screen.Home.route) { HomeScreen() }
+            composable(Screen.Home.route) {
+                // Otteniamo il nome dell'utente dal SessionManager
+                val userName = sessionManager.getFirstName().ifEmpty {
+                    sessionManager.getUsername() ?: "Utente"
+                }
+
+                HomeScreen(userName = userName)
+            }
             composable(Screen.Group.route) {
                 GroupScreen(
                     onCreateGroupClick = { navController.navigate(Screen.CreateGroup.route) },
