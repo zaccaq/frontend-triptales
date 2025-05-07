@@ -113,6 +113,9 @@ data class PostMediaDTO(
 // Aggiungi queste interfacce all'interfaccia TripTalesApi
 interface TripTalesApi {
     // ... codice esistente ...
+    @POST("api/register/")
+    suspend fun registrazione(@Body richiesta: RichiestaRegistrazione): Response<RispostaRegistrazione>
+
     @POST("api/token/")
     suspend fun login(@Body richiesta: RichiestaLogin): Response<RispostaLogin>
 
