@@ -19,6 +19,32 @@ import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.Part
 import retrofit2.http.Path
+import retrofit2.http.Query
+
+
+data class BadgeDTO(
+    val id: Int,
+    val name: String,
+    val description: String,
+    val icon_url: String?
+)
+
+data class UserStatsDTO(
+    val postCount: Int,
+    val likesCount: Int,
+    val commentsCount: Int
+)
+
+data class LeaderboardEntryDTO(
+    val id: Int,
+    val username: String,
+    val profile_picture: String?,
+    val post_count: Int,
+    val like_count: Int,
+    val comment_count: Int,
+    val total_score: Int,
+    val badges: List<BadgeDTO>
+)
 
 // Modelli di dati
 data class RichiestaRegistrazione(
@@ -113,6 +139,28 @@ data class PostMediaDTO(
 // Aggiungi queste interfacce all'interfaccia TripTalesApi
 interface TripTalesApi {
     // ... codice esistente ...
+
+    @GET("api/users/me/badges/")
+    suspend fun getUserBadges(): Response<List<BadgeDTO>>
+
+    @GET("api/users/me/stats/")
+    suspend fun getUserStats(): Response<UserStatsDTO>
+
+    @GET("api/users/leaderboard/")
+    suspend fun getLeaderboard(@Query("group_id") groupId: String? = null): Response<List<LeaderboardEntryDTO>>
+
+    @Multipart
+    @POST("api/post-media/upload_media/")
+    suspend fun uploadMedia(
+        @Part("post_id") postId: RequestBody,
+        @Part media: MultipartBody.Part,
+        @Part("latitude") latitude: RequestBody? = null,
+        @Part("longitude") longitude: RequestBody? = null,
+        @Part("detected_objects") detectedObjects: RequestBody? = null,
+        @Part("ocr_text") ocrText: RequestBody? = null,
+        @Part("caption") caption: RequestBody? = null
+    ): Response<PostMediaDTO>
+
     @POST("api/register/")
     suspend fun registrazione(@Body richiesta: RichiestaRegistrazione): Response<RispostaRegistrazione>
 

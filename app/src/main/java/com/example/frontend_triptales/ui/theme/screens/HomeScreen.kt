@@ -10,6 +10,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -46,7 +47,10 @@ import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(userName: String = "Marco") {
+fun HomeScreen(
+    userName: String = "Marco",
+    onProfileClick: () -> Unit = {}  // Parametro per la navigazione al profilo
+) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
     val userLocation = rememberUserLocation()
@@ -285,6 +289,30 @@ fun HomeScreen(userName: String = "Marco") {
                         )
                     )
             )
+
+            // Pulsante di profilo nell'header che rimane visibile durante lo scroll
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                IconButton(
+                    onClick = onProfileClick,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(48.dp)
+                        .shadow(4.dp, CircleShape)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.3f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Profilo",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
         }
 
         // Contenuto scrollabile
@@ -322,13 +350,14 @@ fun HomeScreen(userName: String = "Marco") {
                             )
                         }
 
-                        // Avatar utente
+                        // Avatar utente cliccabile per navigare al profilo
                         Box(
                             modifier = Modifier
                                 .size(56.dp)
                                 .shadow(8.dp, CircleShape)
                                 .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.2f)),
+                                .background(Color.White.copy(alpha = 0.2f))
+                                .clickable(onClick = onProfileClick),  // Cliccabile per navigare al profilo
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -423,6 +452,62 @@ fun HomeScreen(userName: String = "Marco") {
                                 stat = stat,
                                 modifier = Modifier.weight(1f),
                                 animDelay = index * 100
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Sezione badge e profilo
+            item {
+                AnimatedVisibility(
+                    visible = isWeatherLoaded,
+                    enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 16.dp)
+                            .clickable(onClick = onProfileClick),  // Navigazione al profilo
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFE1F5FE)  // Colore azzurro chiaro
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Icona badge
+                            Icon(
+                                imageVector = Icons.Default.EmojiEvents,
+                                contentDescription = null,
+                                tint = Color(0xFFFFD700),  // Oro
+                                modifier = Modifier.size(36.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "I tuoi badge e progressi",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = Color(0xFF0277BD)
+                                )
+                                Text(
+                                    text = "Controlla i badge e la tua posizione in classifica",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF0277BD).copy(alpha = 0.7f)
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = Color(0xFF0277BD)
                             )
                         }
                     }

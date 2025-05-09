@@ -74,7 +74,10 @@ fun TripTalesApp() {
                     sessionManager.getUsername() ?: "Utente"
                 }
 
-                HomeScreen(userName = userName)
+                HomeScreen(
+                    userName = userName,
+                    onProfileClick = { navController.navigate(Screen.Profile.route) }
+                )
             }
             composable(Screen.Group.route) {
                 GroupScreen(
@@ -102,6 +105,29 @@ fun TripTalesApp() {
             ) { backStackEntry ->
                 val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
                 GroupChatScreen(
+                    groupId = groupId,
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.Profile.route) {
+                ProfileScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onLeaderboardClick = { navController.navigate(Screen.Leaderboard.route) }
+                )
+            }
+
+            composable(Screen.Leaderboard.route) {
+                LeaderboardScreen(
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = Screen.GroupLeaderboard.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
+                LeaderboardScreen(
                     groupId = groupId,
                     onBackClick = { navController.popBackStack() }
                 )
