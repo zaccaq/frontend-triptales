@@ -144,7 +144,36 @@ data class CreateGroupRequest(
     val is_private: Boolean
 )
 
+data class GroupInviteRequest(
+    val username_or_email: String
+)
+
+data class GroupInviteDTO(
+    val id: Int,
+    val group: GruppoDTO,
+    val invited_by: UserDTO,
+    val invited_user: UserDTO,
+    val status: String,
+    val created_at: String
+)
+
 interface TripTalesApi {
+
+    @POST("api/trip-groups/{id}/invite_user/")
+    suspend fun inviteUserToGroup(
+        @Path("id") groupId: String,
+        @Body request: GroupInviteRequest
+    ): Response<GroupInviteDTO>
+
+    @GET("api/group-invites/my_invites/")
+    suspend fun getMyInvites(): Response<List<GroupInviteDTO>>
+
+    @POST("api/trip-groups/accept_invite/{id}/")
+    suspend fun acceptInvite(@Path("id") inviteId: String): Response<GroupMembershipDTO>
+
+    @POST("api/trip-groups/decline_invite/{id}/")
+    suspend fun declineInvite(@Path("id") inviteId: String): Response<Any>
+
     @POST("register/") // Corretto l'endpoint di registrazione
     suspend fun registrazione(@Body richiesta: RichiestaRegistrazione): Response<RispostaRegistrazione>
 

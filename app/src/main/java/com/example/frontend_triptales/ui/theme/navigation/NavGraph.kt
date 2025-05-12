@@ -28,7 +28,9 @@ fun TripTalesApp() {
                     Screen.Login.route,
                     Screen.Register.route,
                     Screen.CreateGroup.route,
-                    "group_chat/"
+                    "group_chat/",
+                    Screen.InvitesList.route,
+                    "invite_to_group/"
                 )) {
                 NavigationBar {
                     bottomBarScreens.forEach { screen ->
@@ -85,6 +87,9 @@ fun TripTalesApp() {
                     onJoinGroupClick = {},
                     onGroupClick = { groupId ->
                         navController.navigate(Screen.GroupChat.createRoute(groupId))
+                    },
+                    onInvitesClick = {
+                        navController.navigate(Screen.InvitesList.route)
                     }
                 )
             }
@@ -130,6 +135,35 @@ fun TripTalesApp() {
                 LeaderboardScreen(
                     groupId = groupId,
                     onBackClick = { navController.popBackStack() }
+                )
+            }
+
+            // Nuova rotta per la lista degli inviti
+            composable(Screen.InvitesList.route) {
+                InvitesListScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onInviteAccepted = {
+                        // Aggiorna la schermata dei gruppi dopo l'accettazione
+                        navController.navigate(Screen.Group.route) {
+                            popUpTo(Screen.Group.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            // Nuova rotta per invitare utenti a un gruppo specifico
+            composable(
+                route = Screen.InviteToGroup.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
+                GroupInviteScreen(
+                    groupId = groupId,
+                    onBackClick = { navController.popBackStack() },
+                    onInviteSent = {
+                        // Torna alla schermata della chat di gruppo dopo l'invio
+                        navController.popBackStack()
+                    }
                 )
             }
         }

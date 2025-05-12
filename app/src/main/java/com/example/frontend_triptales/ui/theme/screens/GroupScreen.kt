@@ -1,4 +1,3 @@
-// app/src/main/java/com/example/frontend_triptales/ui/theme/screens/GroupScreen.kt
 package com.example.frontend_triptales.ui.theme.screens
 
 import android.util.Log
@@ -11,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,7 +21,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.frontend_triptales.api.GruppoDTO
 import com.example.frontend_triptales.api.ServizioApi
 import com.example.frontend_triptales.auth.SessionManager
 import kotlinx.coroutines.launch
@@ -35,11 +34,13 @@ data class GroupItem(
     val memberCount: Int
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupScreen(
     onCreateGroupClick: () -> Unit,
     onJoinGroupClick: () -> Unit,
-    onGroupClick: (String) -> Unit
+    onGroupClick: (String) -> Unit,
+    onInvitesClick: () -> Unit  // Nuovo parametro per gestire il click sull'icona delle notifiche
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -49,16 +50,22 @@ fun GroupScreen(
     var groups by remember { mutableStateOf<List<GroupItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var pendingInvites by remember { mutableStateOf(0) } // Contatore degli inviti in attesa
 
-    // Carica i gruppi dell'utente
+    // Carica i gruppi dell'utente e gli inviti in attesa
     LaunchedEffect(Unit) {
+        val token = sessionManager.getToken()
+        Log.d("GroupScreen", "Token: ${token?.take(20)}...") // Debug del token
+
         coroutineScope.launch {
             try {
                 isLoading = true
                 errorMessage = null
 
+                // Carica i gruppi
                 val api = ServizioApi.getAuthenticatedClient(context)
                 val response = api.getMyGroups()
+
                 if (response.isSuccessful && response.body() != null) {
                     groups = response.body()!!.map { group ->
                         GroupItem(
@@ -70,9 +77,23 @@ fun GroupScreen(
                     }
                 } else {
                     errorMessage = "Errore nel caricamento dei gruppi"
+                    Log.e("GroupScreen", "Errore API: ${response.code()} ${response.errorBody()?.string()}")
+                }
+
+                // Carica gli inviti in attesa
+                try {
+                    val invitesResponse = api.getMyInvites()
+                    if (invitesResponse.isSuccessful && invitesResponse.body() != null) {
+                        // Aggiorna il contatore degli inviti
+                        pendingInvites = invitesResponse.body()!!.size
+                    } else {
+                        Log.e("GroupScreen", "Errore nel caricamento degli inviti: ${invitesResponse.code()}")
+                    }
+                } catch (e: Exception) {
+                    Log.e("GroupScreen", "Errore inviti: ${e.message}")
                 }
             } catch (e: Exception) {
-                Log.e("GroupScreen", "Errore di connessione: ${e.message}")
+                Log.e("GroupScreen", "Errore di connessione: ${e.message}", e)
                 errorMessage = "Errore di connessione: ${e.message}"
                 groups = emptyList()
             } finally {
@@ -81,95 +102,118 @@ fun GroupScreen(
         }
     }
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Text(
-            "I tuoi gruppi",
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
-            modifier = Modifier.padding(vertical = 16.dp)
-        )
-
-        if (isLoading) {
-            // Mostra un indicatore di caricamento
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                CircularProgressIndicator(color = Color(0xFF5AC8FA))
-            }
-        } else if (errorMessage != null) {
-            // Mostra errore
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(16.dp)
-            ) {
-                Text(
-                    errorMessage!!,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-        } else if (groups.isEmpty()) {
-            // Nessun gruppo trovato
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(16.dp)
-            ) {
-                Text(
-                    "Non sei ancora in nessun gruppo.\nCrea o unisciti a un gruppo per iniziare!",
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-        } else {
-            // Mostra la lista dei gruppi
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                items(groups) { group ->
-                    GroupCard(
-                        group = group,
-                        onClick = { onGroupClick(group.id) }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("I tuoi gruppi") },
+                actions = {
+                    // Badge con icona delle notifiche
+                    BadgedBox(
+                        badge = {
+                            if (pendingInvites > 0) {
+                                Badge { Text(pendingInvites.toString()) }
+                            }
+                        }
+                    ) {
+                        IconButton(onClick = onInvitesClick) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = "Inviti",
+                                tint = Color(0xFF5AC8FA)
+                            )
+                        }
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+        ) {
+            if (isLoading) {
+                // Mostra un indicatore di caricamento
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    CircularProgressIndicator(color = Color(0xFF5AC8FA))
+                }
+            } else if (errorMessage != null) {
+                // Mostra errore
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        errorMessage!!,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
+            } else if (groups.isEmpty()) {
+                // Nessun gruppo trovato
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        "Non sei ancora in nessun gruppo.\nCrea o unisciti a un gruppo per iniziare!",
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            } else {
+                // Mostra la lista dei gruppi
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    items(groups) { group ->
+                        GroupCard(
+                            group = group,
+                            onClick = { onGroupClick(group.id) }
+                        )
+                    }
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Button(
-            onClick = onCreateGroupClick,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA))
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Crea nuovo gruppo", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
+            Button(
+                onClick = onCreateGroupClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5AC8FA))
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Crea nuovo gruppo", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
 
-        Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        OutlinedButton(
-            onClick = onJoinGroupClick,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Text("Unisciti a un gruppo", fontSize = 16.sp)
+            OutlinedButton(
+                onClick = onJoinGroupClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text("Unisciti a un gruppo", fontSize = 16.sp)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

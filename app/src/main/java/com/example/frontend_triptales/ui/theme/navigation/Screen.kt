@@ -19,4 +19,9 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object GroupLeaderboard : Screen("group_leaderboard/{groupId}", "Classifica", Icons.Default.Leaderboard) {
         fun createRoute(groupId: String) = "group_leaderboard/$groupId"
     }
+    object InvitesList : Screen("invites_list", "Inviti", Icons.Default.Notifications)
+
+    object InviteToGroup : Screen("invite_to_group/{groupId}", "Invita", Icons.Default.PersonAdd) {
+        fun createRoute(groupId: String) = "invite_to_group/$groupId"
+    }
 }
