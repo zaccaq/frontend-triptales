@@ -151,6 +151,8 @@ data class CreateGroupRequest(
 interface TripTalesApi {
     // ... codice esistente ...
 
+
+
     @POST("api/trip-groups/")
     suspend fun createGroup(@Body request: CreateGroupRequest): Response<GruppoDTO>
 
@@ -184,8 +186,8 @@ interface TripTalesApi {
     @GET("api/users/me/")
     suspend fun getUserDetails(): Response<UserDTO>  // Rimuovi il parametro token
 
-    @GET("api/trip-groups/")
-    suspend fun getMyGroups(): Response<Any>
+    @GET("api/trip-groups/my/")
+    suspend fun getMyGroups(): Response<List<GruppoDTO>>
 
     @GET("api/trip-groups/{id}/")
     suspend fun getGroupDetails(@Path("id") groupId: String): Response<GruppoDTO>

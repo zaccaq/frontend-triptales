@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import coil.compose.rememberAsyncImagePainter
+import com.example.frontend_triptales.api.ServizioApi
 import com.example.frontend_triptales.auth.SessionManager
 import com.example.frontend_triptales.ui.theme.chat.ChatService
 import kotlinx.coroutines.flow.collectLatest
@@ -58,14 +59,17 @@ fun GroupChatScreen(
     // Stato per il nome del gruppo
     var groupName by remember { mutableStateOf("Gruppo $groupId") }
 
-    // Effettua il fetch del nome del gruppo
     LaunchedEffect(groupId) {
-        // API call per ottenere i dettagli del gruppo
-        // Per ora utilizziamo un placeholder
-        when (groupId) {
-            "1" -> groupName = "Vacanza in Sicilia"
-            "2" -> groupName = "Weekend in montagna"
-            "3" -> groupName = "Gita scolastica Parigi"
+        try {
+            val api = ServizioApi.getAuthenticatedClient(context)
+            val response = api.getGroupDetails(groupId)
+
+            if (response.isSuccessful && response.body() != null) {
+                val group = response.body()!!
+                groupName = group.name
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
