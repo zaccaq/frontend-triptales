@@ -20,8 +20,9 @@ import retrofit2.http.Multipart
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import java.util.concurrent.TimeUnit
 
-
+// Modelli di dati
 data class BadgeDTO(
     val id: Int,
     val name: String,
@@ -46,7 +47,6 @@ data class LeaderboardEntryDTO(
     val badges: List<BadgeDTO>
 )
 
-// Modelli di dati
 data class RichiestaRegistrazione(
     val username: String,
     val email: String,
@@ -66,7 +66,7 @@ data class RichiestaLogin(
 )
 
 data class RispostaLogin(
-    val access: String? = null,    // Cambiato da token a access
+    val access: String? = null,
     val refresh: String? = null,
     val error: String? = null
 )
@@ -85,7 +85,6 @@ data class PostMediaResponse(
     val media_type: String
 )
 
-// Modifica al modello GruppoDTO in ApiService.kt
 data class GruppoDTO(
     val id: Int,
     val name: String,
@@ -97,9 +96,9 @@ data class GruppoDTO(
     val created_by: UserDTO,
     val created_at: String,
     val member_count: Int,
-    val memberCount: Int = member_count, // Aggiungiamo questo alias
+    val memberCount: Int = member_count,
     val lastActivityDate: String? = null,
-    val user_role: String? = null // Aggiungiamo questo campo per identificare il ruolo dell'utente nel gruppo
+    val user_role: String? = null
 )
 
 data class UserDTO(
@@ -107,11 +106,9 @@ data class UserDTO(
     val username: String,
     val email: String?,
     val profile_picture: String?,
-    val first_name: String?,  // Assicurati che sia nullable
+    val first_name: String?,
     val last_name: String?
 )
-
-
 
 data class GroupMembershipDTO(
     val id: Int,
@@ -147,44 +144,15 @@ data class CreateGroupRequest(
     val is_private: Boolean
 )
 
-// Aggiungi queste interfacce all'interfaccia TripTalesApi
 interface TripTalesApi {
-    // ... codice esistente ...
-
-
-
-    @POST("api/trip-groups/")
-    suspend fun createGroup(@Body request: CreateGroupRequest): Response<GruppoDTO>
-
-    @GET("api/users/me/badges/")
-    suspend fun getUserBadges(): Response<List<BadgeDTO>>
-
-    @GET("api/users/me/stats/")
-    suspend fun getUserStats(): Response<UserStatsDTO>
-
-    @GET("api/users/leaderboard/")
-    suspend fun getLeaderboard(@Query("group_id") groupId: String? = null): Response<List<LeaderboardEntryDTO>>
-
-    @Multipart
-    @POST("api/post-media/upload_media/")
-    suspend fun uploadMedia(
-        @Part("post_id") postId: RequestBody,
-        @Part media: MultipartBody.Part,
-        @Part("latitude") latitude: RequestBody? = null,
-        @Part("longitude") longitude: RequestBody? = null,
-        @Part("detected_objects") detectedObjects: RequestBody? = null,
-        @Part("ocr_text") ocrText: RequestBody? = null,
-        @Part("caption") caption: RequestBody? = null
-    ): Response<PostMediaDTO>
-
-    @POST("api/register/")
+    @POST("register/") // Corretto l'endpoint di registrazione
     suspend fun registrazione(@Body richiesta: RichiestaRegistrazione): Response<RispostaRegistrazione>
 
     @POST("api/token/")
     suspend fun login(@Body richiesta: RichiestaLogin): Response<RispostaLogin>
 
     @GET("api/users/me/")
-    suspend fun getUserDetails(): Response<UserDTO>  // Rimuovi il parametro token
+    suspend fun getUserDetails(): Response<UserDTO>
 
     @GET("api/trip-groups/my/")
     suspend fun getMyGroups(): Response<List<GruppoDTO>>
@@ -213,21 +181,38 @@ interface TripTalesApi {
     ): Response<PostMediaDTO>
 
     @POST("api/trip-groups/")
-    suspend fun createGroup(@Body groupData: Map<String, Any>): Response<GruppoDTO>
+    suspend fun createGroup(@Body request: CreateGroupRequest): Response<GruppoDTO>
+
+    @GET("api/users/me/badges/")
+    suspend fun getUserBadges(): Response<List<BadgeDTO>>
+
+    @GET("api/users/me/stats/")
+    suspend fun getUserStats(): Response<UserStatsDTO>
+
+    @GET("api/users/leaderboard/")
+    suspend fun getLeaderboard(@Query("group_id") groupId: String? = null): Response<List<LeaderboardEntryDTO>>
+
+    @Multipart
+    @POST("api/post-media/upload_media/")
+    suspend fun uploadMedia(
+        @Part("post_id") postId: RequestBody,
+        @Part media: MultipartBody.Part,
+        @Part("latitude") latitude: RequestBody? = null,
+        @Part("longitude") longitude: RequestBody? = null,
+        @Part("detected_objects") detectedObjects: RequestBody? = null,
+        @Part("ocr_text") ocrText: RequestBody? = null,
+        @Part("caption") caption: RequestBody? = null
+    ): Response<PostMediaDTO>
 
     @POST("api/trip-groups/{id}/join/")
     suspend fun joinGroup(@Path("id") groupId: String): Response<GroupMembershipDTO>
 }
 
-// Singleton del servizio API
-// Modifica la parte finale del file ServizioApi.kt, lasciando intatti i modelli di dati e l'interfaccia
-
-// Singleton del servizio API
 object ServizioApi {
     // URL per diversi ambienti
     private const val EMULATOR_URL = "http://10.0.2.2:8000/"
     private const val LOCAL_DEVICE_URL = "http://10.0.2.2:8000/"
-    private const val PRODUCTION_URL = "https://api.triptales.example.com/" // URL futuro per la produzione
+    private const val PRODUCTION_URL = "https://api.triptales.example.com/"
 
     // Tempo di timeout per le richieste
     private const val TIMEOUT_MS = 15000L
@@ -261,9 +246,9 @@ object ServizioApi {
     // Client HTTP di base con timeout
     private fun getBaseHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
-            .connectTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
-            .readTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
-            .writeTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .writeTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .build()
     }
 
@@ -310,9 +295,9 @@ object ServizioApi {
         // Crea un nuovo client HTTP con l'interceptor di autenticazione
         val authenticatedClient = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
-            .connectTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
-            .readTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
-            .writeTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .writeTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .build()
 
         // Crea e restituisce una nuova istanza di Retrofit con il client autenticato
