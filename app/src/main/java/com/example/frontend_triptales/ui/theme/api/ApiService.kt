@@ -138,9 +138,21 @@ data class PostMediaDTO(
     val created_at: String
 )
 
+data class CreateGroupRequest(
+    val name: String,
+    val description: String,
+    val location: String,
+    val start_date: String,
+    val end_date: String,
+    val is_private: Boolean
+)
+
 // Aggiungi queste interfacce all'interfaccia TripTalesApi
 interface TripTalesApi {
     // ... codice esistente ...
+
+    @POST("api/trip-groups/")
+    suspend fun createGroup(@Body request: CreateGroupRequest): Response<GruppoDTO>
 
     @GET("api/users/me/badges/")
     suspend fun getUserBadges(): Response<List<BadgeDTO>>
@@ -212,7 +224,7 @@ interface TripTalesApi {
 object ServizioApi {
     // URL per diversi ambienti
     private const val EMULATOR_URL = "http://10.0.2.2:8000/"
-    private const val LOCAL_DEVICE_URL = "http://192.168.1.x:8000/" // Modifica con il tuo IP reale sulla rete locale
+    private const val LOCAL_DEVICE_URL = "http://10.0.2.2:8000/"
     private const val PRODUCTION_URL = "https://api.triptales.example.com/" // URL futuro per la produzione
 
     // Tempo di timeout per le richieste

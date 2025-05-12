@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend_triptales.api.CreateGroupRequest
 import com.example.frontend_triptales.api.ServizioApi
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -257,17 +258,17 @@ fun CreateGroupScreen(
                     try {
                         isLoading = true
 
-                        val groupData = mapOf(
-                            "name" to groupName,
-                            "description" to groupDescription,
-                            "location" to location,
-                            "start_date" to startDate,
-                            "end_date" to endDate,
-                            "is_private" to isPrivate
+                        val request = CreateGroupRequest(
+                            name = groupName,
+                            description = groupDescription,
+                            location = location,
+                            start_date = startDate,
+                            end_date = endDate,
+                            is_private = isPrivate
                         )
 
                         val api = ServizioApi.getAuthenticatedClient(context)
-                        val response = api.createGroup(groupData)
+                        val response = api.createGroup(request)
 
                         if (response.isSuccessful && response.body() != null) {
                             val group = response.body()!!
