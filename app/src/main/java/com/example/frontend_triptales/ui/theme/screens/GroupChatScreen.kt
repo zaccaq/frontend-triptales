@@ -46,7 +46,7 @@ fun GroupChatScreen(
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
-    val chatService = remember { ChatService(sessionManager) }
+    val chatService = remember { ChatService(sessionManager, context) }
     val coroutineScope = rememberCoroutineScope()
 
     // Stato per i messaggi

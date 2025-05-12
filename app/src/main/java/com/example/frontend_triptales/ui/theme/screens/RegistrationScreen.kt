@@ -173,7 +173,7 @@ fun RegistrationScreen(
                                         last_name = lastName
                                     )
 
-                                    val risposta = ServizioApi.api.registrazione(richiesta)
+                                    val risposta = ServizioApi.getApi(context).registrazione(richiesta)
 
                                     if (risposta.isSuccessful) {
                                         Toast.makeText(context, "Registrazione completata con successo!", Toast.LENGTH_LONG).show()

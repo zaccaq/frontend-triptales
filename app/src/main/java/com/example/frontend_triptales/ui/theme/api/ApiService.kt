@@ -85,6 +85,7 @@ data class PostMediaResponse(
     val media_type: String
 )
 
+// Modifica al modello GruppoDTO in ApiService.kt
 data class GruppoDTO(
     val id: Int,
     val name: String,
@@ -97,7 +98,8 @@ data class GruppoDTO(
     val created_at: String,
     val member_count: Int,
     val memberCount: Int = member_count, // Aggiungiamo questo alias
-    val lastActivityDate: String? = null
+    val lastActivityDate: String? = null,
+    val user_role: String? = null // Aggiungiamo questo campo per identificare il ruolo dell'utente nel gruppo
 )
 
 data class UserDTO(
@@ -204,32 +206,83 @@ interface TripTalesApi {
 }
 
 // Singleton del servizio API
+// Modifica la parte finale del file ServizioApi.kt, lasciando intatti i modelli di dati e l'interfaccia
+
+// Singleton del servizio API
 object ServizioApi {
-    // Aggiorna questo con l'URL effettivo del tuo backend quando testi con un server reale
-    // Per lo sviluppo locale, utilizza l'indirizzo IP del tuo computer (non localhost o 127.0.0.1)
-    // Esempio: "http://192.168.1.100:8000/"
-    // 10.0.2.2 è l'indirizzo speciale che l'emulatore Android usa per accedere al localhost del computer host
-    private const val URL_BASE = "http://10.0.2.2:8000/"
+    // URL per diversi ambienti
+    private const val EMULATOR_URL = "http://10.0.2.2:8000/"
+    private const val LOCAL_DEVICE_URL = "http://192.168.1.x:8000/" // Modifica con il tuo IP reale sulla rete locale
+    private const val PRODUCTION_URL = "https://api.triptales.example.com/" // URL futuro per la produzione
 
-    // Client HTTP di base, senza autenticazione (per login e registrazione)
-    private val httpClient = OkHttpClient.Builder().build()
+    // Tempo di timeout per le richieste
+    private const val TIMEOUT_MS = 15000L
 
-    private val retrofit = Retrofit.Builder()
-        .baseUrl(URL_BASE)
-        .addConverterFactory(GsonConverterFactory.create())
-        .client(httpClient)
-        .build()
+    // Funzione per determinare l'URL base appropriato
+    fun getBaseUrl(context: Context): String {
+        return when {
+            isEmulator() -> EMULATOR_URL
+            isDebugBuild(context) -> LOCAL_DEVICE_URL
+            else -> PRODUCTION_URL
+        }
+    }
 
-    val api: TripTalesApi = retrofit.create(TripTalesApi::class.java)
+    // Controlla se l'app è in esecuzione su un emulatore
+    private fun isEmulator(): Boolean {
+        return (android.os.Build.FINGERPRINT.startsWith("generic") ||
+                android.os.Build.FINGERPRINT.startsWith("unknown") ||
+                android.os.Build.MODEL.contains("google_sdk") ||
+                android.os.Build.MODEL.contains("Emulator") ||
+                android.os.Build.MODEL.contains("Android SDK built for x86") ||
+                android.os.Build.MANUFACTURER.contains("Genymotion") ||
+                android.os.Build.BRAND.startsWith("generic") && android.os.Build.DEVICE.startsWith("generic") ||
+                "google_sdk" == android.os.Build.PRODUCT)
+    }
+
+    // Controlla se è una build di debug
+    private fun isDebugBuild(context: Context): Boolean {
+        return 0 != context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE
+    }
+
+    // Client HTTP di base con timeout
+    private fun getBaseHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .readTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .writeTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .build()
+    }
+
+    // Ottieni l'API client per il contesto specifico
+    fun getApi(context: Context): TripTalesApi {
+        val baseUrl = getBaseUrl(context)
+        return Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .addConverterFactory(GsonConverterFactory.create())
+            .client(getBaseHttpClient())
+            .build()
+            .create(TripTalesApi::class.java)
+    }
+
+    // Per compatibilità con il codice esistente
+    val api: TripTalesApi by lazy {
+        Retrofit.Builder()
+            .baseUrl(EMULATOR_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .client(getBaseHttpClient())
+            .build()
+            .create(TripTalesApi::class.java)
+    }
 
     // Crea un client HTTP con l'autenticazione JWT per le richieste autenticate
     fun getAuthenticatedClient(context: Context): TripTalesApi {
         val sessionManager = SessionManager(context)
         val token = sessionManager.getToken()
+        val baseUrl = getBaseUrl(context)
 
         // Se non c'è un token, restituisci il client non autenticato
         if (token == null) {
-            return api
+            return getApi(context)
         }
 
         // Crea un interceptor che aggiunge l'header di autenticazione
@@ -243,11 +296,14 @@ object ServizioApi {
         // Crea un nuovo client HTTP con l'interceptor di autenticazione
         val authenticatedClient = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .connectTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .readTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .writeTimeout(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
             .build()
 
         // Crea e restituisce una nuova istanza di Retrofit con il client autenticato
         return Retrofit.Builder()
-            .baseUrl(URL_BASE)
+            .baseUrl(baseUrl)
             .addConverterFactory(GsonConverterFactory.create())
             .client(authenticatedClient)
             .build()

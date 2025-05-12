@@ -13,26 +13,52 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-class ChatService(private val sessionManager: SessionManager) {
+class ChatService(private val sessionManager: SessionManager, private val context: Context) {
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS) // Nessun timeout per WebSocket
+        .connectTimeout(15000, TimeUnit.MILLISECONDS)
         .build()
 
     private val _messages = Channel<ChatMessage>(Channel.BUFFERED)
     val messages = _messages.receiveAsFlow()
 
+    // Ottiene l'URL di base dinamicamente
+    private fun getWebSocketBaseUrl(): String {
+        // Ottieni l'URL di base dall'API Service
+        val fullUrl = ServizioApi.getBaseUrl(context)
+
+        // Rimuovi http:// o https:// e eventuali path
+        val baseUrlWithoutProtocol = if (fullUrl.startsWith("https://")) {
+            fullUrl.substring(8)
+        } else {
+            fullUrl.substring(7)
+        }
+
+        // Rimuovi eventuali path e conserva solo il dominio con la porta
+        val domainAndPort = baseUrlWithoutProtocol.split("/")[0]
+
+        // Costruisci l'URL WebSocket
+        return "ws://$domainAndPort"
+    }
+
     fun connectToChat(groupId: String) {
         val token = sessionManager.getToken() ?: return
 
+        // Usa l'URL di base dinamico
+        val wsBaseUrl = getWebSocketBaseUrl()
+        val wsUrl = "$wsBaseUrl/ws/chat/$groupId/"
+
+        Log.d("ChatService", "Connecting to WebSocket: $wsUrl")
+
         val request = Request.Builder()
-            .url("ws://10.0.2.2:8000/ws/chat/$groupId/")
+            .url(wsUrl)
             .addHeader("Authorization", "Bearer $token")
             .build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d("ChatService", "Connected to WebSocket")
+                Log.d("ChatService", "Connected to WebSocket: ${response.message}")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -54,6 +80,16 @@ class ChatService(private val sessionManager: SessionManager) {
                         }
                         "image" -> {
                             // Gestione immagini
+                            val message = ChatMessage(
+                                id = jsonObject.optString("id", "temp-${System.currentTimeMillis()}"),
+                                senderId = jsonObject.getString("user_id"),
+                                senderName = jsonObject.getString("username"),
+                                content = "",
+                                timestamp = jsonObject.getString("timestamp"),
+                                isCurrentUser = jsonObject.getString("user_id") == sessionManager.getUserId(),
+                                imageUrl = jsonObject.getString("url")
+                            )
+                            _messages.trySend(message)
                         }
                     }
                 } catch (e: Exception) {
@@ -62,7 +98,8 @@ class ChatService(private val sessionManager: SessionManager) {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("ChatService", "WebSocket error", t)
+                Log.e("ChatService", "WebSocket error: ${t.message}", t)
+                Log.e("ChatService", "WebSocket response: ${response?.message}")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -103,6 +140,7 @@ class ChatService(private val sessionManager: SessionManager) {
         val isCurrentUser: Boolean,
         val imageUrl: String? = null
     )
+
     suspend fun uploadAndSendImage(context: Context, groupId: String, imageUri: Uri) {
         try {
             // Ottieni il contentResolver
@@ -135,7 +173,7 @@ class ChatService(private val sessionManager: SessionManager) {
                 requestFile
             )
 
-            // Effettua la richiesta API
+            // Effettua la richiesta API con l'API client dinamico
             val api = ServizioApi.getAuthenticatedClient(context)
             val response = api.uploadChatImage(groupIdPart, imagePart)
 

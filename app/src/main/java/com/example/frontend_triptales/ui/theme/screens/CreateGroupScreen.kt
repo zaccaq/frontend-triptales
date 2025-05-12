@@ -1,6 +1,7 @@
 // app/src/main/java/com/example/frontend_triptales/ui/theme/screens/CreateGroupScreen.kt
 package com.example.frontend_triptales.ui.theme.screens
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -269,13 +270,21 @@ fun CreateGroupScreen(
                         val response = api.createGroup(groupData)
 
                         if (response.isSuccessful && response.body() != null) {
-                            Toast.makeText(context, "Gruppo creato con successo!", Toast.LENGTH_SHORT).show()
-                            onGroupCreated(response.body()!!.id.toString())
+                            val group = response.body()!!
+
+                            // Verifica se l'utente è stato aggiunto come admin
+                            val userRole = response.body()?.user_role ?: "member"
+                            Log.d("CreateGroup", "Gruppo creato con ruolo: $userRole")
+
+                            Toast.makeText(context, "Gruppo creato con successo! Sei amministratore.", Toast.LENGTH_SHORT).show()
+                            onGroupCreated(group.id.toString())
                         } else {
                             Toast.makeText(context, "Errore nella creazione del gruppo", Toast.LENGTH_SHORT).show()
+                            Log.e("CreateGroup", "Errore: ${response.errorBody()?.string()}")
                         }
                     } catch (e: Exception) {
                         Toast.makeText(context, "Errore: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Log.e("CreateGroup", "Eccezione: ${e.message}", e)
                     } finally {
                         isLoading = false
                     }

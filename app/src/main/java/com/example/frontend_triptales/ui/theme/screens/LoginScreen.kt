@@ -123,7 +123,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToRegister: () -> Unit) {
                                         password = password
                                     )
 
-                                    val risposta = ServizioApi.api.login(richiesta)
+                                    val risposta = ServizioApi.getApi(context).login(richiesta)
                                     Log.d("LoginDebug", "Risposta: ${risposta.body()}")
 
                                     if (risposta.isSuccessful) {
