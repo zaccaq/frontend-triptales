@@ -1,6 +1,7 @@
 package com.example.frontend_triptales.api
 
 import android.content.Context
+import android.util.Log
 import com.example.frontend_triptales.auth.SessionManager
 import okhttp3.Interceptor
 import okhttp3.MultipartBody
@@ -168,10 +169,11 @@ interface TripTalesApi {
     @GET("api/group-invites/my_invites/")
     suspend fun getMyInvites(): Response<List<GroupInviteDTO>>
 
-    @POST("api/trip-groups/accept_invite/{id}/")
+    // Also update accept/decline methods to match Django URLs
+    @POST("api/group-invites/{id}/accept/")
     suspend fun acceptInvite(@Path("id") inviteId: String): Response<GroupMembershipDTO>
 
-    @POST("api/trip-groups/decline_invite/{id}/")
+    @POST("api/group-invites/{id}/decline/")
     suspend fun declineInvite(@Path("id") inviteId: String): Response<Any>
 
     @POST("register/") // Corretto l'endpoint di registrazione
@@ -310,18 +312,32 @@ object ServizioApi {
 
         // Se non c'è un token, restituisci il client non autenticato
         if (token == null) {
+            Log.w("ServizioApi", "Nessun token di autenticazione trovato")
             return getApi(context)
         }
 
-        // Crea un interceptor che aggiunge l'header di autenticazione
+        // Crea un interceptor che aggiunge l'header di autenticazione e gestisce gli errori 401
         val authInterceptor = Interceptor { chain ->
+            // Aggiungi l'header di Authorization alla richiesta
             val newRequest: Request = chain.request().newBuilder()
                 .addHeader("Authorization", "Bearer $token")
                 .build()
-            chain.proceed(newRequest)
+
+            // Processa la risposta
+            val response = chain.proceed(newRequest)
+
+            // Se riceviamo 401 Unauthorized, il token potrebbe essere scaduto
+            if (response.code == 401) {
+                Log.w("ServizioApi", "Ricevuto 401 Unauthorized - Il token potrebbe essere scaduto")
+
+                // Qui potresti implementare la logica per rinnovare il token se hai un refresh token
+                // Per ora, logghiamo solamente il problema
+            }
+
+            response
         }
 
-        // Crea un nuovo client HTTP con l'interceptor di autenticazione
+        // Crea un nuovo client HTTP con l'interceptor di autenticazione e timeout più lunghi
         val authenticatedClient = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)

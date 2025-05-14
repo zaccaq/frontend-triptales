@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend_triptales.api.GroupInviteDTO
 import com.example.frontend_triptales.api.ServizioApi
+import com.example.frontend_triptales.auth.SessionManager
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -37,35 +38,74 @@ fun InvitesListScreen(
     var invites by remember { mutableStateOf<List<GroupInviteDTO>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var retryCount by remember { mutableStateOf(0) }
 
-    // Carica gli inviti
-    LaunchedEffect(Unit) {
+    // Funzione per caricare gli inviti
+    fun loadInvites() {
         coroutineScope.launch {
             try {
                 isLoading = true
                 errorMessage = null
 
                 val api = ServizioApi.getAuthenticatedClient(context)
-                Log.d("InvitesScreen", "Richiesta inviti in corso...")
+
+                // Log detailed diagnostic info
+                val baseUrl = ServizioApi.getBaseUrl(context)
+                Log.d("InvitesScreen", "Base URL: $baseUrl")
+                Log.d("InvitesScreen", "Token available: ${context.let { SessionManager(it).getToken() != null }}")
+                Log.d("InvitesScreen", "Making request to fetch invites - attempt: ${retryCount + 1}")
+
                 val response = api.getMyInvites()
-
                 Log.d("InvitesScreen", "Response code: ${response.code()}")
-                Log.d("InvitesScreen", "Response body: ${response.body()}")
-                Log.d("InvitesScreen", "Error body: ${response.errorBody()?.string()}")
 
-                if (response.isSuccessful && response.body() != null) {
-                    invites = response.body()!!
-                } else {
-                    errorMessage = "Errore nel caricamento degli inviti"
-                    Log.e("InvitesScreen", "Errore API: ${response.code()} ${response.errorBody()?.string()}")
+                when (response.code()) {
+                    200 -> {
+                        // Success case
+                        val responseBody = response.body()
+                        if (responseBody != null) {
+                            Log.d("InvitesScreen", "Found ${responseBody.size} invites")
+                            invites = responseBody
+                        } else {
+                            // Empty but successful response (likely no invites)
+                            Log.d("InvitesScreen", "No invites found (empty response)")
+                            invites = emptyList()
+                        }
+                    }
+                    401 -> {
+                        // Authentication error (token expired or invalid)
+                        Log.e("InvitesScreen", "Authentication error (401): ${response.errorBody()?.string()}")
+                        errorMessage = "Session expired. Please log in again to continue."
+                    }
+                    403 -> {
+                        // Permission error
+                        Log.e("InvitesScreen", "Permission error (403): ${response.errorBody()?.string()}")
+                        errorMessage = "You don't have permission to access this resource."
+                    }
+                    404 -> {
+                        // Endpoint not found
+                        Log.e("InvitesScreen", "Endpoint not found (404)")
+                        errorMessage = "Resource not found. Please contact support."
+                    }
+                    else -> {
+                        // Other errors
+                        val errorBody = response.errorBody()?.string()
+                        Log.e("InvitesScreen", "API Error (${response.code()}): $errorBody")
+                        errorMessage = "Error loading invites (${response.code()}): ${errorBody?.take(100)}"
+                    }
                 }
             } catch (e: Exception) {
-                Log.e("InvitesScreen", "Errore di connessione: ${e.message}", e)
-                errorMessage = "Errore di connessione: ${e.message}"
+                // Network or unexpected errors
+                Log.e("InvitesScreen", "Connection error: ${e.message}", e)
+                errorMessage = "Connection error: ${e.message}"
             } finally {
                 isLoading = false
             }
         }
+    }
+
+    // Carica gli inviti
+    LaunchedEffect(retryCount) {
+        loadInvites()
     }
 
     Scaffold(
@@ -75,6 +115,14 @@ fun InvitesListScreen(
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
+                    }
+                },
+                actions = {
+                    // Aggiungi un pulsante di aggiornamento
+                    IconButton(onClick = {
+                        retryCount++  // Incrementa il contatore per forzare il ricaricamento
+                    }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Aggiorna")
                     }
                 }
             )
@@ -98,11 +146,23 @@ fun InvitesListScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        errorMessage!!,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            errorMessage!!,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = { retryCount++ }
+                        ) {
+                            Text("Riprova")
+                        }
+                    }
                 }
             } else if (invites.isEmpty()) {
                 Box(
@@ -147,9 +207,11 @@ fun InvitesListScreen(
                                             onInviteAccepted()
                                         } else {
                                             Log.e("InvitesScreen", "Errore nell'accettare l'invito: ${response.code()}")
+                                            errorMessage = "Errore nell'accettare l'invito"
                                         }
                                     } catch (e: Exception) {
                                         Log.e("InvitesScreen", "Errore: ${e.message}")
+                                        errorMessage = "Errore nell'accettare l'invito: ${e.message}"
                                     }
                                 }
                             },
@@ -164,9 +226,11 @@ fun InvitesListScreen(
                                             invites = invites.filter { it.id != invite.id }
                                         } else {
                                             Log.e("InvitesScreen", "Errore nel rifiutare l'invito: ${response.code()}")
+                                            errorMessage = "Errore nel rifiutare l'invito"
                                         }
                                     } catch (e: Exception) {
                                         Log.e("InvitesScreen", "Errore: ${e.message}")
+                                        errorMessage = "Errore nel rifiutare l'invito: ${e.message}"
                                     }
                                 }
                             }
@@ -230,7 +294,7 @@ fun InviteCard(
                     )
 
                     Text(
-                        text = formatInviteDate(invite.created_at),
+                        text = formatDate(invite.created_at),
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
@@ -239,13 +303,15 @@ fun InviteCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(
-                text = invite.group.description,
-                fontSize = 14.sp,
-                maxLines = 2
-            )
+            if (invite.group.description.isNotBlank()) {
+                Text(
+                    text = invite.group.description,
+                    fontSize = 14.sp,
+                    maxLines = 2
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -279,6 +345,26 @@ fun InviteCard(
                     Text("Accetta")
                 }
             }
+        }
+    }
+}
+
+// Renamed function to avoid conflicting overloads
+private fun formatDate(dateString: String): String {
+    try {
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS", Locale.getDefault())
+        val date = inputFormat.parse(dateString)
+        val outputFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.ITALIAN)
+        return outputFormat.format(date)
+    } catch (e: Exception) {
+        // Prova un formato alternativo se il primo fallisce
+        try {
+            val alternativeFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
+            val date = alternativeFormat.parse(dateString)
+            val outputFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.ITALIAN)
+            return outputFormat.format(date)
+        } catch (e2: Exception) {
+            return "Data sconosciuta"
         }
     }
 }
