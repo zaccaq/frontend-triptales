@@ -206,7 +206,7 @@ fun GroupScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedButton(
-                onClick = onJoinGroupClick,
+                onClick = onJoinGroupClick, // Ora questo callback navigherà alla JoinGroupScreen
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp)
             ) {

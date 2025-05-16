@@ -99,7 +99,8 @@ data class GruppoDTO(
     val member_count: Int,
     val memberCount: Int = member_count,
     val lastActivityDate: String? = null,
-    val user_role: String? = null
+    val user_role: String? = null,
+    val is_private: Boolean
 )
 
 data class UserDTO(
@@ -234,6 +235,11 @@ interface TripTalesApi {
         @Part("ocr_text") ocrText: RequestBody? = null,
         @Part("caption") caption: RequestBody? = null
     ): Response<PostMediaDTO>
+
+    // In ServizioApi.kt, aggiungi questi metodi all'interfaccia TripTalesApi
+
+    @GET("api/trip-groups/")
+    suspend fun searchGroups(@Query("search") query: String): Response<List<GruppoDTO>>
 
     @POST("api/trip-groups/{id}/join/")
     suspend fun joinGroup(@Path("id") groupId: String): Response<GroupMembershipDTO>

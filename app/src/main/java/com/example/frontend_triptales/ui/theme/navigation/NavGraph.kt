@@ -84,7 +84,7 @@ fun TripTalesApp() {
             composable(Screen.Group.route) {
                 GroupScreen(
                     onCreateGroupClick = { navController.navigate(Screen.CreateGroup.route) },
-                    onJoinGroupClick = {},
+                    onJoinGroupClick = { navController.navigate(Screen.JoinGroup.route) }, // Questa è la riga da modificare
                     onGroupClick = { groupId ->
                         navController.navigate(Screen.GroupChat.createRoute(groupId))
                     },
@@ -111,7 +111,10 @@ fun TripTalesApp() {
                 val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
                 GroupChatScreen(
                     groupId = groupId,
-                    onBackClick = { navController.popBackStack() }
+                    onBackClick = { navController.popBackStack() },
+                    onInviteClick = { id ->
+                        navController.navigate(Screen.InviteToGroup.createRoute(id))
+                    }
                 )
             }
             composable(Screen.Profile.route) {
@@ -163,6 +166,18 @@ fun TripTalesApp() {
                     onInviteSent = {
                         // Torna alla schermata della chat di gruppo dopo l'invio
                         navController.popBackStack()
+                    }
+                )
+            }
+            composable(Screen.JoinGroup.route) {
+                JoinGroupScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onGroupJoined = { groupId ->
+                        // Naviga direttamente alla chat del gruppo dopo l'unione
+                        navController.navigate(Screen.GroupChat.createRoute(groupId)) {
+                            // Rimuovi la schermata di unione al gruppo dallo stack di navigazione
+                            popUpTo(Screen.Group.route)
+                        }
                     }
                 )
             }

@@ -24,4 +24,6 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object InviteToGroup : Screen("invite_to_group/{groupId}", "Invita", Icons.Default.PersonAdd) {
         fun createRoute(groupId: String) = "invite_to_group/$groupId"
     }
+    // In Screen.kt, aggiungi questa definizione
+    object JoinGroup : Screen("join_group", "Unisciti", Icons.Default.GroupAdd)
 }
