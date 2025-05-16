@@ -159,6 +159,47 @@ data class GroupInviteDTO(
     val created_at: String
 )
 
+data class WeatherResponse(
+    val main: WeatherMain,
+    val weather: List<WeatherCondition>,
+    val name: String,
+    val sys: WeatherSystem? = null
+)
+
+data class WeatherMain(
+    val temp: Double,
+    val feels_like: Double,
+    val temp_min: Double,
+    val temp_max: Double,
+    val pressure: Int,
+    val humidity: Int
+)
+
+data class WeatherCondition(
+    val id: Int,
+    val main: String,
+    val description: String,
+    val icon: String
+)
+
+data class WeatherSystem(
+    val country: String,
+    val sunrise: Long,
+    val sunset: Long
+)
+
+
+interface OpenWeatherMapApi {
+    @GET("data/2.5/weather")
+    suspend fun getCurrentWeather(
+        @Query("lat") lat: Double,
+        @Query("lon") lon: Double,
+        @Query("appid") apiKey: String,
+        @Query("units") units: String = "metric",
+        @Query("lang") lang: String = "it"
+    ): Response<WeatherResponse>
+}
+
 interface TripTalesApi {
 
     @POST("api/trip-groups/{id}/invite_user/")
@@ -243,6 +284,49 @@ interface TripTalesApi {
 
     @POST("api/trip-groups/{id}/join/")
     suspend fun joinGroup(@Path("id") groupId: String): Response<GroupMembershipDTO>
+}
+
+object WeatherService {
+    private const val WEATHER_API_KEY = "b052bace2ea6693b223b12ed2afea7c7"
+    private const val WEATHER_BASE_URL = "https://api.openweathermap.org/"
+
+    // Client HTTP per il meteo
+    private val weatherClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .build()
+
+    // API per OpenWeatherMap
+    private val weatherApi = Retrofit.Builder()
+        .baseUrl(WEATHER_BASE_URL)
+        .addConverterFactory(GsonConverterFactory.create())
+        .client(weatherClient)
+        .build()
+        .create(OpenWeatherMapApi::class.java)
+
+    /**
+     * Recupera i dati meteo in base a coordinate geografiche
+     */
+    suspend fun getWeatherByCoordinates(lat: Double, lon: Double): WeatherResponse? {
+        return try {
+            val response = weatherApi.getCurrentWeather(
+                lat = lat,
+                lon = lon,
+                apiKey = WEATHER_API_KEY
+            )
+
+            if (response.isSuccessful) {
+                response.body()
+            } else {
+                Log.e("WeatherService", "Errore API meteo: ${response.code()} - ${response.message()}")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("WeatherService", "Eccezione durante chiamata API meteo", e)
+            null
+        }
+    }
 }
 
 object ServizioApi {

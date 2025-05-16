@@ -30,7 +30,8 @@ fun TripTalesApp() {
                     Screen.CreateGroup.route,
                     "group_chat/",
                     Screen.InvitesList.route,
-                    "invite_to_group/"
+                    "invite_to_group/",
+                    Screen.AIAssistant.route // Aggiungi qui la rotta dell'AI per nascondere la bottom bar
                 )) {
                 NavigationBar {
                     bottomBarScreens.forEach { screen ->
@@ -78,13 +79,15 @@ fun TripTalesApp() {
 
                 HomeScreen(
                     userName = userName,
-                    onProfileClick = { navController.navigate(Screen.Profile.route) }
+                    onProfileClick = { navController.navigate(Screen.Profile.route) },
+                    // Aggiungi questo nuovo callback per l'assistente AI
+                    onAIAssistantClick = { navController.navigate(Screen.AIAssistant.route) }
                 )
             }
             composable(Screen.Group.route) {
                 GroupScreen(
                     onCreateGroupClick = { navController.navigate(Screen.CreateGroup.route) },
-                    onJoinGroupClick = { navController.navigate(Screen.JoinGroup.route) }, // Questa è la riga da modificare
+                    onJoinGroupClick = { navController.navigate(Screen.JoinGroup.route) },
                     onGroupClick = { groupId ->
                         navController.navigate(Screen.GroupChat.createRoute(groupId))
                     },
@@ -179,6 +182,13 @@ fun TripTalesApp() {
                             popUpTo(Screen.Group.route)
                         }
                     }
+                )
+            }
+
+            // Nuova rotta per l'assistente AI
+            composable(Screen.AIAssistant.route) {
+                AIAssistantScreen(
+                    onBackClick = { navController.popBackStack() }
                 )
             }
         }

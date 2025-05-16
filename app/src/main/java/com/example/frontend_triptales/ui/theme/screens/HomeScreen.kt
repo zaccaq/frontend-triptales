@@ -40,8 +40,12 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.frontend_triptales.api.WeatherService
 import com.example.frontend_triptales.auth.SessionManager
+import com.example.frontend_triptales.ui.theme.components.AIAssistantButton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.*
 import kotlin.random.Random
 
@@ -49,7 +53,8 @@ import kotlin.random.Random
 @Composable
 fun HomeScreen(
     userName: String = "Marco",
-    onProfileClick: () -> Unit = {}  // Parametro per la navigazione al profilo
+    onProfileClick: () -> Unit = {},  // Parametro per la navigazione al profilo
+    onAIAssistantClick: () -> Unit = {}  // Nuovo parametro per l'assistente AI
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -98,6 +103,7 @@ fun HomeScreen(
     }
 
     // Aggiorna la città quando otteniamo la posizione
+    // Versione corretta usando launch in una coroutine
     LaunchedEffect(userLocation) {
         if (userLocation != null) {
             // Verifica se abbiamo i permessi per la localizzazione
@@ -134,8 +140,11 @@ fun HomeScreen(
                                 cityName = city
 
                                 // Ottenere meteo per questa posizione
-                                fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
-                                    weatherData = weatherResult.copy(cityName = city)
+                                // CORREZIONE: Usiamo launch per chiamare la funzione sospesa
+                                launch {
+                                    fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
+                                        weatherData = weatherResult.copy(cityName = city)
+                                    }
                                 }
 
                                 // Ottieni luoghi vicini in base alla posizione reale
@@ -163,8 +172,11 @@ fun HomeScreen(
                             cityName = city
 
                             // Ottenere meteo per questa posizione
-                            fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
-                                weatherData = weatherResult.copy(cityName = city)
+                            // CORREZIONE: Usiamo launch per chiamare la funzione sospesa
+                            launch {
+                                fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
+                                    weatherData = weatherResult.copy(cityName = city)
+                                }
                             }
 
                             // Ottieni luoghi vicini in base alla posizione reale
@@ -177,12 +189,25 @@ fun HomeScreen(
                     Log.e("HomeScreen", "Errore geocoding", e)
                     // Fallback in caso di errore
                     cityName = "Posizione: ${userLocation.latitude.toInt()}°N, ${userLocation.longitude.toInt()}°E"
-                    weatherData = weatherData.copy(cityName = cityName)
+
+                    // CORREZIONE: Anche qui usiamo launch
+                    launch {
+                        fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
+                            weatherData = weatherResult.copy(cityName = cityName)
+                        }
+                    }
                 }
             } else {
                 // Mostra messaggio di permesso mancante
                 cityName = "Permesso di localizzazione necessario"
-                weatherData = weatherData.copy(cityName = cityName)
+
+                // CORREZIONE: Simuliamo il meteo anche senza permessi
+                launch {
+                    // Coordinate predefinite in caso di mancato permesso (ad esempio Roma)
+                    fetchWeatherData(41.9028, 12.4964) { weatherResult ->
+                        weatherData = weatherResult.copy(cityName = cityName)
+                    }
+                }
             }
         }
     }
@@ -458,6 +483,15 @@ fun HomeScreen(
                 }
             }
 
+            item {
+                AnimatedVisibility(
+                    visible = isWeatherLoaded,
+                    enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
+                ) {
+                    AIAssistantButton(onClick = onAIAssistantClick)
+                }
+            }
+
             // Sezione badge e profilo
             item {
                 AnimatedVisibility(
@@ -687,20 +721,25 @@ fun HomeScreen(
     }
 }
 
-/**
- * Ottiene i dati meteo in base alle coordinate
- */
-private fun fetchWeatherData(lat: Double, lon: Double, callback: (WeatherData) -> Unit) {
-    // Usare l'API weather per ottenere i dati meteo reali
-    // Per ora usiamo dati simulati
+private fun generateFallbackWeatherData(lat: Double, lon: Double, callback: (WeatherData) -> Unit) {
+    // Utilizza l'algoritmo attuale per generare dati meteo realistici ma simulati
+    // in caso di fallimento dell'API reale
 
-    // Simula varie condizioni meteo in base alla posizione
+    // Hash basato sulla posizione per generare dati coerenti
     val hash = lat.toInt() * 31 + lon.toInt()
-    val conditions = listOf("Soleggiato", "Nuvoloso", "Parzialmente nuvoloso", "Piovoso", "Temporale", "Ventoso")
+
+    // Possibili condizioni meteo
+    val conditions = listOf(
+        "Soleggiato", "Nuvoloso", "Parzialmente nuvoloso",
+        "Piovoso", "Temporale", "Ventoso"
+    )
+
+    // Seleziona una condizione meteo in base all'hash
     val randomIndex = Math.abs(hash) % conditions.size
     val condition = conditions[randomIndex]
 
-    // Temperatura basata sulla latitudine (più caldo a sud)
+    // Calcola temperatura basandosi sulla latitudine (più caldo a sud, più freddo a nord)
+    // e aggiunge una variazione casuale ma deterministica
     val baseTemp = 30 - (lat / 10).toInt()
     val temp = baseTemp + (Math.abs(hash) % 10) - 5
 
@@ -717,18 +756,83 @@ private fun fetchWeatherData(lat: Double, lon: Double, callback: (WeatherData) -
         else -> Icons.Default.Air // Ventoso
     }
 
-    // Crea oggetto meteo
+    // Crea e invia l'oggetto meteo
     val weatherData = WeatherData(
         temperature = temp.toInt(),
         condition = condition,
         humidity = humidity,
-        cityName = "", // Sarà impostato dal chiamante
+        cityName = "Posizione rilevata", // Sarà aggiornato dal chiamante
         icon = icon
     )
 
     callback(weatherData)
+    Log.d("WeatherAPI", "Generati dati meteo di fallback: $temp°C, $condition")
+}
+/**
+ * Ottiene i dati meteo in base alle coordinate
+ */
+private suspend fun fetchWeatherData(lat: Double, lon: Double, callback: (WeatherData) -> Unit) {
+    try {
+        // Recupera i dati meteo dall'API reale
+        val weatherResponse = withContext(Dispatchers.IO) {
+            WeatherService.getWeatherByCoordinates(lat, lon)
+        }
+
+        if (weatherResponse != null) {
+            // Estrai i dati dalla risposta
+            val temperature = weatherResponse.main.temp.toInt()
+            val condition = weatherResponse.weather.firstOrNull()?.description?.capitalize() ?: "Sconosciuto"
+            val humidity = weatherResponse.main.humidity
+
+            // Determina l'icona appropriata
+            val icon = when {
+                condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
+                condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
+                condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
+                condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
+                condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
+                condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
+                condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
+                condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
+                condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
+                condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
+                condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
+                condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
+                condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
+                else -> Icons.Default.WbSunny // Default
+            }
+
+            // Crea l'oggetto WeatherData
+            val weatherData = WeatherData(
+                temperature = temperature,
+                condition = condition,
+                humidity = humidity,
+                cityName = weatherResponse.name,
+                icon = icon
+            )
+
+            // Invia i dati tramite callback
+            callback(weatherData)
+            Log.d("WeatherAPI", "Meteo recuperato con successo: $temperature°C, $condition")
+        } else {
+            // In caso di errore, usa i dati di fallback
+            generateFallbackWeatherData(lat, lon, callback)
+            Log.d("WeatherAPI", "Utilizzo dati meteo di fallback")
+        }
+    } catch (e: Exception) {
+        Log.e("WeatherAPI", "Errore nel recupero dati meteo: ${e.message}")
+        // In caso di eccezione, usa i dati di fallback
+        generateFallbackWeatherData(lat, lon, callback)
+    }
 }
 
+private fun String.capitalize(): String {
+    return if (isNotEmpty()) {
+        this[0].uppercase() + substring(1)
+    } else {
+        this
+    }
+}
 /**
  * Fornisce luoghi predefiniti mentre si caricano quelli reali
  */
