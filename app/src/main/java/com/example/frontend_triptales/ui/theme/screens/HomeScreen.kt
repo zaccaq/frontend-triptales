@@ -46,6 +46,7 @@ import com.example.frontend_triptales.ui.theme.components.AIAssistantButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.util.*
 import kotlin.random.Random
 
@@ -104,6 +105,7 @@ fun HomeScreen(
 
     // Aggiorna la città quando otteniamo la posizione
     // Versione corretta usando launch in una coroutine
+    // Aggiorna la città quando otteniamo la posizione
     LaunchedEffect(userLocation) {
         if (userLocation != null) {
             // Verifica se abbiamo i permessi per la localizzazione
@@ -116,6 +118,8 @@ fun HomeScreen(
                 try {
                     // Usa il Geocoder con Locale.ITALY per ottenere i nomi in italiano
                     val geocoder = Geocoder(context, Locale.ITALY)
+
+                    Log.d("HomeScreen", "Rilevamento posizione: ${userLocation.latitude}, ${userLocation.longitude}")
 
                     // Ottieni dettagli località
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -140,10 +144,57 @@ fun HomeScreen(
                                 cityName = city
 
                                 // Ottenere meteo per questa posizione
-                                // CORREZIONE: Usiamo launch per chiamare la funzione sospesa
-                                launch {
-                                    fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
-                                        weatherData = weatherResult.copy(cityName = city)
+                                coroutineScope.launch {
+                                    try {
+                                        // Chiama l'API in un thread IO
+                                        val response = withContext(Dispatchers.IO) {
+                                            WeatherService.getWeatherByCoordinates(userLocation.latitude, userLocation.longitude)
+                                        }
+
+                                        if (response != null) {
+                                            val temperature = response.main.temp.toInt()
+                                            val condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
+                                                if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+                                            } ?: "Sconosciuto"
+                                            val humidity = response.main.humidity
+
+                                            // Scegli l'icona
+                                            val icon = when {
+                                                condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
+                                                condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
+                                                condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
+                                                condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
+                                                condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
+                                                condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
+                                                condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
+                                                condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
+                                                condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
+                                                condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
+                                                condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
+                                                condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
+                                                condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
+                                                else -> Icons.Default.WbSunny // Default
+                                            }
+
+                                            weatherData = WeatherData(
+                                                temperature = temperature,
+                                                condition = condition,
+                                                humidity = humidity,
+                                                cityName = city,
+                                                icon = icon
+                                            )
+                                            Log.d("WeatherAPI", "Dati meteo aggiornati: $temperature°C, $condition")
+                                        } else {
+                                            // Fallback
+                                            generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
+                                                weatherData = result.copy(cityName = city)
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("WeatherAPI", "Errore meteo: ${e.message}", e)
+                                        generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
+                                            weatherData = result.copy(cityName = city)
+                                        }
                                     }
                                 }
 
@@ -155,45 +206,159 @@ fun HomeScreen(
                         }
                     } else {
                         // Per API < 33
-                        @Suppress("DEPRECATION")
-                        val addresses = geocoder.getFromLocation(userLocation.latitude, userLocation.longitude, 1)
-                        if (!addresses.isNullOrEmpty()) {
-                            val address = addresses[0]
+                        try {
+                            withTimeout(3000) { // 3 secondi timeout per geocoding
+                                @Suppress("DEPRECATION")
+                                val addresses = geocoder.getFromLocation(userLocation.latitude, userLocation.longitude, 1)
+                                if (!addresses.isNullOrEmpty()) {
+                                    val address = addresses[0]
 
-                            // Priorità a località, città, poi area amministrativa
-                            val city = address.locality ?:
-                            address.subAdminArea ?:
-                            address.adminArea ?:
-                            "Posizione rilevata"
+                                    // Priorità a località, città, poi area amministrativa
+                                    val city = address.locality ?:
+                                    address.subAdminArea ?:
+                                    address.adminArea ?:
+                                    "Posizione rilevata"
 
-                            Log.d("HomeScreen", "Indirizzo completo: ${address.getAddressLine(0)}")
-                            Log.d("HomeScreen", "Località: ${address.locality}, SubAdmin: ${address.subAdminArea}, Admin: ${address.adminArea}")
+                                    Log.d("HomeScreen", "Indirizzo completo: ${address.getAddressLine(0)}")
+                                    Log.d("HomeScreen", "Località: ${address.locality}, SubAdmin: ${address.subAdminArea}, Admin: ${address.adminArea}")
 
-                            cityName = city
+                                    cityName = city
 
-                            // Ottenere meteo per questa posizione
-                            // CORREZIONE: Usiamo launch per chiamare la funzione sospesa
-                            launch {
-                                fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
-                                    weatherData = weatherResult.copy(cityName = city)
+                                    // Ottenere meteo per questa posizione
+                                    coroutineScope.launch {
+                                        try {
+                                            // Chiama l'API in un thread IO
+                                            val response = withContext(Dispatchers.IO) {
+                                                WeatherService.getWeatherByCoordinates(userLocation.latitude, userLocation.longitude)
+                                            }
+
+                                            if (response != null) {
+                                                val temperature = response.main.temp.toInt()
+                                                val condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
+                                                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+                                                } ?: "Sconosciuto"
+                                                val humidity = response.main.humidity
+
+                                                // Scegli l'icona
+                                                val icon = when {
+                                                    condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
+                                                    condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
+                                                    condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
+                                                    condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
+                                                    condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
+                                                    condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
+                                                    condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
+                                                    condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
+                                                    condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
+                                                    condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
+                                                    condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
+                                                    condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
+                                                    condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
+                                                    else -> Icons.Default.WbSunny // Default
+                                                }
+
+                                                weatherData = WeatherData(
+                                                    temperature = temperature,
+                                                    condition = condition,
+                                                    humidity = humidity,
+                                                    cityName = city,
+                                                    icon = icon
+                                                )
+                                                Log.d("WeatherAPI", "Dati meteo aggiornati: $temperature°C, $condition")
+                                            } else {
+                                                // Fallback
+                                                generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
+                                                    weatherData = result.copy(cityName = city)
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("WeatherAPI", "Errore meteo: ${e.message}", e)
+                                            generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
+                                                weatherData = result.copy(cityName = city)
+                                            }
+                                        }
+                                    }
+
+                                    // Ottieni luoghi vicini in base alla posizione reale
+                                    getNearbyPlaces(userLocation.latitude, userLocation.longitude, city) { places ->
+                                        nearbyPlaces = places
+                                    }
                                 }
                             }
+                        } catch (e: Exception) {
+                            Log.e("HomeScreen", "Timeout o errore nel geocoding", e)
+                            // Fallback se il geocoding ha un timeout
+                            cityName = "Posizione: ${userLocation.latitude.toInt()}°N, ${userLocation.longitude.toInt()}°E"
 
-                            // Ottieni luoghi vicini in base alla posizione reale
-                            getNearbyPlaces(userLocation.latitude, userLocation.longitude, city) { places ->
-                                nearbyPlaces = places
+                            // Ottieni meteo usando solo le coordinate
+                            coroutineScope.launch {
+                                try {
+                                    // Chiama l'API in un thread IO
+                                    val response = withContext(Dispatchers.IO) {
+                                        WeatherService.getWeatherByCoordinates(userLocation.latitude, userLocation.longitude)
+                                    }
+
+                                    if (response != null) {
+                                        val temperature = response.main.temp.toInt()
+                                        val condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
+                                            if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+                                        } ?: "Sconosciuto"
+                                        val humidity = response.main.humidity
+
+                                        weatherData = WeatherData(
+                                            temperature = temperature,
+                                            condition = condition,
+                                            humidity = humidity,
+                                            cityName = cityName,
+                                            icon = chooseWeatherIcon(condition)
+                                        )
+                                    } else {
+                                        generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
+                                            weatherData = result.copy(cityName = cityName)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("WeatherAPI", "Errore meteo: ${e.message}", e)
+                                    generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
+                                        weatherData = result.copy(cityName = cityName)
+                                    }
+                                }
                             }
                         }
                     }
                 } catch (e: Exception) {
                     Log.e("HomeScreen", "Errore geocoding", e)
-                    // Fallback in caso di errore
+                    // Fallback in caso di errore generale
                     cityName = "Posizione: ${userLocation.latitude.toInt()}°N, ${userLocation.longitude.toInt()}°E"
 
-                    // CORREZIONE: Anche qui usiamo launch
-                    launch {
-                        fetchWeatherData(userLocation.latitude, userLocation.longitude) { weatherResult ->
-                            weatherData = weatherResult.copy(cityName = cityName)
+                    // Ottieni meteo usando solo le coordinate
+                    coroutineScope.launch {
+                        try {
+                            // Usa direttamente il servizio meteo senza il geocoding
+                            val response = withContext(Dispatchers.IO) {
+                                WeatherService.getWeatherByCoordinates(userLocation.latitude, userLocation.longitude)
+                            }
+
+                            if (response != null) {
+                                weatherData = WeatherData(
+                                    temperature = response.main.temp.toInt(),
+                                    condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
+                                        if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+                                    } ?: "Sconosciuto",
+                                    humidity = response.main.humidity,
+                                    cityName = cityName,
+                                    icon = Icons.Default.Cloud
+                                )
+                            } else {
+                                generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
+                                    weatherData = result.copy(cityName = cityName)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("WeatherAPI", "Errore meteo: ${e.message}", e)
+                            generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
+                                weatherData = result.copy(cityName = cityName)
+                            }
                         }
                     }
                 }
@@ -201,14 +366,56 @@ fun HomeScreen(
                 // Mostra messaggio di permesso mancante
                 cityName = "Permesso di localizzazione necessario"
 
-                // CORREZIONE: Simuliamo il meteo anche senza permessi
-                launch {
-                    // Coordinate predefinite in caso di mancato permesso (ad esempio Roma)
-                    fetchWeatherData(41.9028, 12.4964) { weatherResult ->
-                        weatherData = weatherResult.copy(cityName = cityName)
+                // Usa coordinate di fallback per il meteo (Roma)
+                coroutineScope.launch {
+                    try {
+                        val response = withContext(Dispatchers.IO) {
+                            WeatherService.getWeatherByCoordinates(41.9028, 12.4964)
+                        }
+
+                        if (response != null) {
+                            weatherData = WeatherData(
+                                temperature = response.main.temp.toInt(),
+                                condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
+                                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+                                } ?: "Sconosciuto",
+                                humidity = response.main.humidity,
+                                cityName = cityName,
+                                icon = Icons.Default.Cloud
+                            )
+                        } else {
+                            generateFallbackWeatherData(41.9028, 12.4964) { result ->
+                                weatherData = result.copy(cityName = cityName)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("WeatherAPI", "Errore meteo con coordinate di fallback: ${e.message}", e)
+                        generateFallbackWeatherData(41.9028, 12.4964) { result ->
+                            weatherData = result.copy(cityName = cityName)
+                        }
                     }
                 }
             }
+        }
+    }
+
+    // Funzione di supporto per scegliere l'icona meteo in base alla condizione
+    fun chooseWeatherIcon(condition: String): ImageVector {
+        return when {
+            condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
+            condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
+            condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
+            condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
+            condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
+            condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
+            condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
+            condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
+            condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
+            condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
+            condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
+            condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
+            condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
+            else -> Icons.Default.WbSunny // Default
         }
     }
 
@@ -771,58 +978,60 @@ private fun generateFallbackWeatherData(lat: Double, lon: Double, callback: (Wea
 /**
  * Ottiene i dati meteo in base alle coordinate
  */
-private suspend fun fetchWeatherData(lat: Double, lon: Double, callback: (WeatherData) -> Unit) {
-    try {
-        // Recupera i dati meteo dall'API reale
-        val weatherResponse = withContext(Dispatchers.IO) {
-            WeatherService.getWeatherByCoordinates(lat, lon)
-        }
+@Composable
+private fun fetchWeatherData(lat: Double, lon: Double, callback: (WeatherData) -> Unit) {
+    // Usa coroutineScope dal composable
+    val coroutineScope = rememberCoroutineScope()
 
-        if (weatherResponse != null) {
-            // Estrai i dati dalla risposta
-            val temperature = weatherResponse.main.temp.toInt()
-            val condition = weatherResponse.weather.firstOrNull()?.description?.capitalize() ?: "Sconosciuto"
-            val humidity = weatherResponse.main.humidity
-
-            // Determina l'icona appropriata
-            val icon = when {
-                condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
-                condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
-                condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
-                condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
-                condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
-                condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
-                condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
-                condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
-                condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
-                condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
-                condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
-                condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
-                condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
-                else -> Icons.Default.WbSunny // Default
+    coroutineScope.launch {
+        try {
+            // Chiama l'API in un thread IO
+            val response = withContext(Dispatchers.IO) {
+                WeatherService.getWeatherByCoordinates(lat, lon)
             }
 
-            // Crea l'oggetto WeatherData
-            val weatherData = WeatherData(
-                temperature = temperature,
-                condition = condition,
-                humidity = humidity,
-                cityName = weatherResponse.name,
-                icon = icon
-            )
+            if (response != null) {
+                val temperature = response.main.temp.toInt()
+                val condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
+                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+                } ?: "Sconosciuto"
+                val humidity = response.main.humidity
 
-            // Invia i dati tramite callback
-            callback(weatherData)
-            Log.d("WeatherAPI", "Meteo recuperato con successo: $temperature°C, $condition")
-        } else {
-            // In caso di errore, usa i dati di fallback
+                // Scegli l'icona
+                val icon = when {
+                    condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
+                    condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
+                    condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
+                    condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
+                    condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
+                    condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
+                    condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
+                    condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
+                    condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
+                    condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
+                    condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
+                    condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
+                    condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
+                    else -> Icons.Default.WbSunny // Default
+                }
+
+                val weatherData = WeatherData(
+                    temperature = temperature,
+                    condition = condition,
+                    humidity = humidity,
+                    cityName = response.name,
+                    icon = icon
+                )
+
+                callback(weatherData)
+            } else {
+                // Fallback
+                generateFallbackWeatherData(lat, lon, callback)
+            }
+        } catch (e: Exception) {
+            Log.e("Weather", "Errore: ${e.message}", e)
             generateFallbackWeatherData(lat, lon, callback)
-            Log.d("WeatherAPI", "Utilizzo dati meteo di fallback")
         }
-    } catch (e: Exception) {
-        Log.e("WeatherAPI", "Errore nel recupero dati meteo: ${e.message}")
-        // In caso di eccezione, usa i dati di fallback
-        generateFallbackWeatherData(lat, lon, callback)
     }
 }
 
