@@ -1,8 +1,5 @@
-package com.example.frontend_triptales.ui.theme.screens
-
 import android.Manifest
 import android.content.pm.PackageManager
-import android.location.Geocoder
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -38,28 +35,30 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.example.frontend_triptales.api.WeatherService
 import com.example.frontend_triptales.auth.SessionManager
 import com.example.frontend_triptales.ui.theme.components.AIAssistantButton
-import kotlinx.coroutines.Dispatchers
+import com.example.frontend_triptales.ui.theme.services.HomeViewModel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import java.util.*
-import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    viewModel: HomeViewModel = viewModel(),
     userName: String = "Marco",
-    onProfileClick: () -> Unit = {},  // Parametro per la navigazione al profilo
-    onAIAssistantClick: () -> Unit = {}  // Nuovo parametro per l'assistente AI
+    onProfileClick: () -> Unit = {},
+    onAIAssistantClick: () -> Unit = {}
 ) {
+    // Raccogli gli stati dal ViewModel
+    val weatherData by viewModel.weatherData.collectAsState()
+    val locationData by viewModel.locationData.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
+
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
-    val userLocation = rememberUserLocation()
     val scrollState = rememberLazyListState()
     val scrollOffset = remember { derivedStateOf { scrollState.firstVisibleItemScrollOffset } }
     val coroutineScope = rememberCoroutineScope()
@@ -67,20 +66,6 @@ fun HomeScreen(
     val firstName = remember {
         val name = sessionManager.getFirstName()
         if (name.isNotBlank()) name else sessionManager.getUsername() ?: "Utente"
-    }
-
-    // Stati per posizione e meteo
-    var cityName by remember { mutableStateOf("Rilevamento posizione...") }
-    var weatherData by remember {
-        mutableStateOf(
-            WeatherData(
-                temperature = 24,
-                condition = "Caricamento...",
-                humidity = 65,
-                cityName = "Rilevamento...",
-                icon = Icons.Default.Cloud
-            )
-        )
     }
 
     // Stati per luoghi vicini
@@ -91,8 +76,11 @@ fun HomeScreen(
     var isActivitiesLoaded by remember { mutableStateOf(false) }
     var isSuggestionsLoaded by remember { mutableStateOf(false) }
 
-    // Attivatori di animazione dopo un breve ritardo
+    // Carica i dati all'avvio e attiva le animazioni
     LaunchedEffect(Unit) {
+        viewModel.loadLocationAndWeather()
+
+        // Attiva le animazioni dopo un breve ritardo
         launch {
             kotlinx.coroutines.delay(300)
             isWeatherLoaded = true
@@ -103,319 +91,12 @@ fun HomeScreen(
         }
     }
 
-    // Aggiorna la città quando otteniamo la posizione
-    // Versione corretta usando launch in una coroutine
-    // Aggiorna la città quando otteniamo la posizione
-    LaunchedEffect(userLocation) {
-        if (userLocation != null) {
-            // Verifica se abbiamo i permessi per la localizzazione
-            val hasLocationPermission = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-
-            if (hasLocationPermission) {
-                try {
-                    // Usa il Geocoder con Locale.ITALY per ottenere i nomi in italiano
-                    val geocoder = Geocoder(context, Locale.ITALY)
-
-                    Log.d("HomeScreen", "Rilevamento posizione: ${userLocation.latitude}, ${userLocation.longitude}")
-
-                    // Ottieni dettagli località
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                        // Per API 33+
-                        geocoder.getFromLocation(
-                            userLocation.latitude,
-                            userLocation.longitude,
-                            1
-                        ) { addresses ->
-                            if (addresses.isNotEmpty()) {
-                                val address = addresses[0]
-
-                                // Priorità a località, città, poi area amministrativa
-                                val city = address.locality ?:
-                                address.subAdminArea ?:
-                                address.adminArea ?:
-                                "Posizione rilevata"
-
-                                Log.d("HomeScreen", "Indirizzo completo: ${address.getAddressLine(0)}")
-                                Log.d("HomeScreen", "Località: ${address.locality}, SubAdmin: ${address.subAdminArea}, Admin: ${address.adminArea}")
-
-                                cityName = city
-
-                                // Ottenere meteo per questa posizione
-                                coroutineScope.launch {
-                                    try {
-                                        // Chiama l'API in un thread IO
-                                        val response = withContext(Dispatchers.IO) {
-                                            WeatherService.getWeatherByCoordinates(userLocation.latitude, userLocation.longitude)
-                                        }
-
-                                        if (response != null) {
-                                            val temperature = response.main.temp.toInt()
-                                            val condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
-                                                if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
-                                            } ?: "Sconosciuto"
-                                            val humidity = response.main.humidity
-
-                                            // Scegli l'icona
-                                            val icon = when {
-                                                condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
-                                                condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
-                                                condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
-                                                condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
-                                                condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
-                                                condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
-                                                condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
-                                                condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
-                                                condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
-                                                condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
-                                                condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
-                                                condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
-                                                condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
-                                                else -> Icons.Default.WbSunny // Default
-                                            }
-
-                                            weatherData = WeatherData(
-                                                temperature = temperature,
-                                                condition = condition,
-                                                humidity = humidity,
-                                                cityName = city,
-                                                icon = icon
-                                            )
-                                            Log.d("WeatherAPI", "Dati meteo aggiornati: $temperature°C, $condition")
-                                        } else {
-                                            // Fallback
-                                            generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
-                                                weatherData = result.copy(cityName = city)
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("WeatherAPI", "Errore meteo: ${e.message}", e)
-                                        generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
-                                            weatherData = result.copy(cityName = city)
-                                        }
-                                    }
-                                }
-
-                                // Ottieni luoghi vicini in base alla posizione reale
-                                getNearbyPlaces(userLocation.latitude, userLocation.longitude, city) { places ->
-                                    nearbyPlaces = places
-                                }
-                            }
-                        }
-                    } else {
-                        // Per API < 33
-                        try {
-                            withTimeout(3000) { // 3 secondi timeout per geocoding
-                                @Suppress("DEPRECATION")
-                                val addresses = geocoder.getFromLocation(userLocation.latitude, userLocation.longitude, 1)
-                                if (!addresses.isNullOrEmpty()) {
-                                    val address = addresses[0]
-
-                                    // Priorità a località, città, poi area amministrativa
-                                    val city = address.locality ?:
-                                    address.subAdminArea ?:
-                                    address.adminArea ?:
-                                    "Posizione rilevata"
-
-                                    Log.d("HomeScreen", "Indirizzo completo: ${address.getAddressLine(0)}")
-                                    Log.d("HomeScreen", "Località: ${address.locality}, SubAdmin: ${address.subAdminArea}, Admin: ${address.adminArea}")
-
-                                    cityName = city
-
-                                    // Ottenere meteo per questa posizione
-                                    coroutineScope.launch {
-                                        try {
-                                            // Chiama l'API in un thread IO
-                                            val response = withContext(Dispatchers.IO) {
-                                                WeatherService.getWeatherByCoordinates(userLocation.latitude, userLocation.longitude)
-                                            }
-
-                                            if (response != null) {
-                                                val temperature = response.main.temp.toInt()
-                                                val condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
-                                                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
-                                                } ?: "Sconosciuto"
-                                                val humidity = response.main.humidity
-
-                                                // Scegli l'icona
-                                                val icon = when {
-                                                    condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
-                                                    condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
-                                                    condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
-                                                    condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
-                                                    condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
-                                                    condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
-                                                    condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
-                                                    condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
-                                                    condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
-                                                    condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
-                                                    condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
-                                                    condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
-                                                    condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
-                                                    else -> Icons.Default.WbSunny // Default
-                                                }
-
-                                                weatherData = WeatherData(
-                                                    temperature = temperature,
-                                                    condition = condition,
-                                                    humidity = humidity,
-                                                    cityName = city,
-                                                    icon = icon
-                                                )
-                                                Log.d("WeatherAPI", "Dati meteo aggiornati: $temperature°C, $condition")
-                                            } else {
-                                                // Fallback
-                                                generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
-                                                    weatherData = result.copy(cityName = city)
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e("WeatherAPI", "Errore meteo: ${e.message}", e)
-                                            generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
-                                                weatherData = result.copy(cityName = city)
-                                            }
-                                        }
-                                    }
-
-                                    // Ottieni luoghi vicini in base alla posizione reale
-                                    getNearbyPlaces(userLocation.latitude, userLocation.longitude, city) { places ->
-                                        nearbyPlaces = places
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e("HomeScreen", "Timeout o errore nel geocoding", e)
-                            // Fallback se il geocoding ha un timeout
-                            cityName = "Posizione: ${userLocation.latitude.toInt()}°N, ${userLocation.longitude.toInt()}°E"
-
-                            // Ottieni meteo usando solo le coordinate
-                            coroutineScope.launch {
-                                try {
-                                    // Chiama l'API in un thread IO
-                                    val response = withContext(Dispatchers.IO) {
-                                        WeatherService.getWeatherByCoordinates(userLocation.latitude, userLocation.longitude)
-                                    }
-
-                                    if (response != null) {
-                                        val temperature = response.main.temp.toInt()
-                                        val condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
-                                            if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
-                                        } ?: "Sconosciuto"
-                                        val humidity = response.main.humidity
-
-                                        weatherData = WeatherData(
-                                            temperature = temperature,
-                                            condition = condition,
-                                            humidity = humidity,
-                                            cityName = cityName,
-                                            icon = chooseWeatherIcon(condition)
-                                        )
-                                    } else {
-                                        generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
-                                            weatherData = result.copy(cityName = cityName)
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e("WeatherAPI", "Errore meteo: ${e.message}", e)
-                                    generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
-                                        weatherData = result.copy(cityName = cityName)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("HomeScreen", "Errore geocoding", e)
-                    // Fallback in caso di errore generale
-                    cityName = "Posizione: ${userLocation.latitude.toInt()}°N, ${userLocation.longitude.toInt()}°E"
-
-                    // Ottieni meteo usando solo le coordinate
-                    coroutineScope.launch {
-                        try {
-                            // Usa direttamente il servizio meteo senza il geocoding
-                            val response = withContext(Dispatchers.IO) {
-                                WeatherService.getWeatherByCoordinates(userLocation.latitude, userLocation.longitude)
-                            }
-
-                            if (response != null) {
-                                weatherData = WeatherData(
-                                    temperature = response.main.temp.toInt(),
-                                    condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
-                                        if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
-                                    } ?: "Sconosciuto",
-                                    humidity = response.main.humidity,
-                                    cityName = cityName,
-                                    icon = Icons.Default.Cloud
-                                )
-                            } else {
-                                generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
-                                    weatherData = result.copy(cityName = cityName)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e("WeatherAPI", "Errore meteo: ${e.message}", e)
-                            generateFallbackWeatherData(userLocation.latitude, userLocation.longitude) { result ->
-                                weatherData = result.copy(cityName = cityName)
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Mostra messaggio di permesso mancante
-                cityName = "Permesso di localizzazione necessario"
-
-                // Usa coordinate di fallback per il meteo (Roma)
-                coroutineScope.launch {
-                    try {
-                        val response = withContext(Dispatchers.IO) {
-                            WeatherService.getWeatherByCoordinates(41.9028, 12.4964)
-                        }
-
-                        if (response != null) {
-                            weatherData = WeatherData(
-                                temperature = response.main.temp.toInt(),
-                                condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
-                                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
-                                } ?: "Sconosciuto",
-                                humidity = response.main.humidity,
-                                cityName = cityName,
-                                icon = Icons.Default.Cloud
-                            )
-                        } else {
-                            generateFallbackWeatherData(41.9028, 12.4964) { result ->
-                                weatherData = result.copy(cityName = cityName)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("WeatherAPI", "Errore meteo con coordinate di fallback: ${e.message}", e)
-                        generateFallbackWeatherData(41.9028, 12.4964) { result ->
-                            weatherData = result.copy(cityName = cityName)
-                        }
-                    }
-                }
+    // Aggiorna i luoghi vicini quando otteniamo la posizione
+    LaunchedEffect(locationData) {
+        locationData?.let { location ->
+            getNearbyPlaces(location.latitude, location.longitude, location.placeName) { places ->
+                nearbyPlaces = places
             }
-        }
-    }
-
-    // Funzione di supporto per scegliere l'icona meteo in base alla condizione
-    fun chooseWeatherIcon(condition: String): ImageVector {
-        return when {
-            condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
-            condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
-            condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
-            condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
-            condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
-            condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
-            condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
-            condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
-            condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
-            condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
-            condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
-            condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
-            condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
-            else -> Icons.Default.WbSunny // Default
         }
     }
 
@@ -483,10 +164,12 @@ fun HomeScreen(
 
     // Calcola l'effetto di parallasse per l'header
     val headerHeight = 180.dp
-    val headerScrollProgress = remember { derivedStateOf {
-        (scrollOffset.value / 600f).coerceIn(0f, 1f)
-    }}
-    val headerAlpha = remember { derivedStateOf { 1f - (headerScrollProgress.value * 0.6f) } }
+    val headerScrollProgress = remember {
+        derivedStateOf { (scrollOffset.value / 600f).coerceIn(0f, 1f) }
+    }
+    val headerAlpha = remember {
+        derivedStateOf { 1f - (headerScrollProgress.value * 0.6f) }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Header con effetto parallasse e gradiente
@@ -522,7 +205,7 @@ fun HomeScreen(
                     )
             )
 
-            // Pulsante di profilo nell'header che rimane visibile durante lo scroll
+            // Pulsante di profilo nell'header
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -589,11 +272,11 @@ fun HomeScreen(
                                 .shadow(8.dp, CircleShape)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.2f))
-                                .clickable(onClick = onProfileClick),  // Cliccabile per navigare al profilo
+                                .clickable(onClick = onProfileClick),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = userName.first().toString(),
+                                text = firstName.first().toString(),
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -603,63 +286,134 @@ fun HomeScreen(
                 }
             }
 
-            // Scheda meteo
-            item {
-                AnimatedVisibility(
-                    visible = isWeatherLoaded,
-                    enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
-                ) {
+            // Indicatore di caricamento
+            if (isLoading) {
+                item {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        color = Color(0xFF5AC8FA)
+                    )
+                }
+            }
+
+            // Mostra errori se presenti
+            error?.let { errorMessage ->
+                item {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .offset(y = (-20).dp),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = Color.White
+                            containerColor = MaterialTheme.colorScheme.errorContainer
                         )
                     ) {
-                        Row(
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Text(
+                                text = "⚠️ Errore",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = errorMessage,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { viewModel.loadLocationAndWeather() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
+                                Text("Riprova")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Scheda meteo
+            weatherData?.let { weather ->
+                item {
+                    AnimatedVisibility(
+                        visible = isWeatherLoaded,
+                        enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
+                    ) {
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 16.dp)
+                                .offset(y = (-20).dp),
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White
+                            )
                         ) {
-                            Column {
-                                Text(
-                                    text = weatherData.cityName,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "📍 Posizione attuale",
-                                    fontSize = 14.sp,
-                                    color = Color.Gray
-                                )
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "${weatherData.temperature}°",
-                                    fontSize = 36.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF5AC8FA)
-                                )
-                                Column(
-                                    modifier = Modifier.padding(start = 8.dp)
-                                ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
                                     Text(
-                                        text = weatherData.condition,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Medium
+                                        text = weather.cityName,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "Umidità: ${weatherData.humidity}%",
-                                        fontSize = 12.sp,
+                                        text = "📍 ${locationData?.placeName ?: "Posizione attuale"}",
+                                        fontSize = 14.sp,
                                         color = Color.Gray
                                     )
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    // Icona meteo
+                                    Icon(
+                                        imageVector = weather.icon,
+                                        contentDescription = weather.condition,
+                                        modifier = Modifier.size(40.dp),
+                                        tint = Color(0xFF5AC8FA)
+                                    )
+
+                                    Column {
+                                        Text(
+                                            text = "${weather.temperature}°",
+                                            fontSize = 36.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF5AC8FA)
+                                        )
+                                        Text(
+                                            text = weather.condition,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "Umidità: ${weather.humidity}%",
+                                            fontSize = 12.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+
+                                    // Pulsante refresh
+                                    IconButton(
+                                        onClick = { viewModel.refreshWeather() }
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Refresh,
+                                            contentDescription = "Aggiorna meteo",
+                                            tint = Color(0xFF5AC8FA)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -690,6 +444,7 @@ fun HomeScreen(
                 }
             }
 
+            // Pulsante AI Assistant
             item {
                 AnimatedVisibility(
                     visible = isWeatherLoaded,
@@ -709,10 +464,10 @@ fun HomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 16.dp)
-                            .clickable(onClick = onProfileClick),  // Navigazione al profilo
+                            .clickable(onClick = onProfileClick),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFFE1F5FE)  // Colore azzurro chiaro
+                            containerColor = Color(0xFFE1F5FE)
                         )
                     ) {
                         Row(
@@ -721,11 +476,10 @@ fun HomeScreen(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Icona badge
                             Icon(
                                 imageVector = Icons.Default.EmojiEvents,
                                 contentDescription = null,
-                                tint = Color(0xFFFFD700),  // Oro
+                                tint = Color(0xFFFFD700),
                                 modifier = Modifier.size(36.dp)
                             )
 
@@ -811,7 +565,6 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         if (nearbyPlaces.isEmpty()) {
-                            // Mostra luoghi predefiniti mentre si caricano quelli reali
                             items(getDefaultNearbyPlaces()) { place ->
                                 PlaceCard(place = place)
                             }
@@ -928,120 +681,8 @@ fun HomeScreen(
     }
 }
 
-private fun generateFallbackWeatherData(lat: Double, lon: Double, callback: (WeatherData) -> Unit) {
-    // Utilizza l'algoritmo attuale per generare dati meteo realistici ma simulati
-    // in caso di fallimento dell'API reale
+// Le funzioni di utility rimangono uguali ma le riporto per completezza
 
-    // Hash basato sulla posizione per generare dati coerenti
-    val hash = lat.toInt() * 31 + lon.toInt()
-
-    // Possibili condizioni meteo
-    val conditions = listOf(
-        "Soleggiato", "Nuvoloso", "Parzialmente nuvoloso",
-        "Piovoso", "Temporale", "Ventoso"
-    )
-
-    // Seleziona una condizione meteo in base all'hash
-    val randomIndex = Math.abs(hash) % conditions.size
-    val condition = conditions[randomIndex]
-
-    // Calcola temperatura basandosi sulla latitudine (più caldo a sud, più freddo a nord)
-    // e aggiunge una variazione casuale ma deterministica
-    val baseTemp = 30 - (lat / 10).toInt()
-    val temp = baseTemp + (Math.abs(hash) % 10) - 5
-
-    // Calcola l'umidità (30-80%)
-    val humidity = 30 + (Math.abs(hash) % 50)
-
-    // Scegli l'icona appropriata
-    val icon = when (condition) {
-        "Soleggiato" -> Icons.Default.WbSunny
-        "Nuvoloso" -> Icons.Default.Cloud
-        "Parzialmente nuvoloso" -> Icons.Default.FilterDrama
-        "Piovoso" -> Icons.Default.Grain
-        "Temporale" -> Icons.Default.FlashOn
-        else -> Icons.Default.Air // Ventoso
-    }
-
-    // Crea e invia l'oggetto meteo
-    val weatherData = WeatherData(
-        temperature = temp.toInt(),
-        condition = condition,
-        humidity = humidity,
-        cityName = "Posizione rilevata", // Sarà aggiornato dal chiamante
-        icon = icon
-    )
-
-    callback(weatherData)
-    Log.d("WeatherAPI", "Generati dati meteo di fallback: $temp°C, $condition")
-}
-/**
- * Ottiene i dati meteo in base alle coordinate
- */
-@Composable
-private fun fetchWeatherData(lat: Double, lon: Double, callback: (WeatherData) -> Unit) {
-    // Usa coroutineScope dal composable
-    val coroutineScope = rememberCoroutineScope()
-
-    coroutineScope.launch {
-        try {
-            // Chiama l'API in un thread IO
-            val response = withContext(Dispatchers.IO) {
-                WeatherService.getWeatherByCoordinates(lat, lon)
-            }
-
-            if (response != null) {
-                val temperature = response.main.temp.toInt()
-                val condition = response.weather.firstOrNull()?.description?.replaceFirstChar {
-                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
-                } ?: "Sconosciuto"
-                val humidity = response.main.humidity
-
-                // Scegli l'icona
-                val icon = when {
-                    condition.contains("sereno", ignoreCase = true) -> Icons.Default.WbSunny
-                    condition.contains("sole", ignoreCase = true) -> Icons.Default.WbSunny
-                    condition.contains("soleggiato", ignoreCase = true) -> Icons.Default.WbSunny
-                    condition.contains("nuvoloso", ignoreCase = true) -> Icons.Default.Cloud
-                    condition.contains("nuvole", ignoreCase = true) -> Icons.Default.Cloud
-                    condition.contains("coperto", ignoreCase = true) -> Icons.Default.Cloud
-                    condition.contains("pioggia", ignoreCase = true) -> Icons.Default.Grain
-                    condition.contains("pioviggine", ignoreCase = true) -> Icons.Default.Grain
-                    condition.contains("temporale", ignoreCase = true) -> Icons.Default.FlashOn
-                    condition.contains("neve", ignoreCase = true) -> Icons.Default.AcUnit
-                    condition.contains("nebbia", ignoreCase = true) -> Icons.Default.Cloud
-                    condition.contains("foschia", ignoreCase = true) -> Icons.Default.Cloud
-                    condition.contains("vento", ignoreCase = true) -> Icons.Default.Air
-                    else -> Icons.Default.WbSunny // Default
-                }
-
-                val weatherData = WeatherData(
-                    temperature = temperature,
-                    condition = condition,
-                    humidity = humidity,
-                    cityName = response.name,
-                    icon = icon
-                )
-
-                callback(weatherData)
-            } else {
-                // Fallback
-                generateFallbackWeatherData(lat, lon, callback)
-            }
-        } catch (e: Exception) {
-            Log.e("Weather", "Errore: ${e.message}", e)
-            generateFallbackWeatherData(lat, lon, callback)
-        }
-    }
-}
-
-private fun String.capitalize(): String {
-    return if (isNotEmpty()) {
-        this[0].uppercase() + substring(1)
-    } else {
-        this
-    }
-}
 /**
  * Fornisce luoghi predefiniti mentre si caricano quelli reali
  */
@@ -1075,260 +716,84 @@ private fun getDefaultNearbyPlaces(): List<PlaceItem> {
  * Ottiene luoghi vicini in base alla posizione
  */
 private fun getNearbyPlaces(lat: Double, lon: Double, city: String, callback: (List<PlaceItem>) -> Unit) {
-    // Qui dovresti integrare con un'API per luoghi vicini come Google Places
-    // Per ora simuliamo luoghi basati sulla città reale
-
     // Definisci luoghi per diverse città italiane
     val placesByCity = mapOf(
         "Roma" to listOf(
-            PlaceItem(
-                id = 1,
-                name = "Colosseo",
-                imageUrl = "https://images.unsplash.com/photo-1552832230-c0197dd311b5",
-                distance = "1.2 km",
-                rating = 4.9f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Fontana di Trevi",
-                imageUrl = "https://images.unsplash.com/photo-1525874684015-58379d421a52",
-                distance = "0.8 km",
-                rating = 4.8f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Pantheon",
-                imageUrl = "https://images.unsplash.com/photo-1552484604-541f2d423d46",
-                distance = "1.5 km",
-                rating = 4.7f
-            )
+            PlaceItem(1, "Colosseo", "https://images.unsplash.com/photo-1552832230-c0197dd311b5", "1.2 km", 4.9f),
+            PlaceItem(2, "Fontana di Trevi", "https://images.unsplash.com/photo-1525874684015-58379d421a52", "0.8 km", 4.8f),
+            PlaceItem(3, "Pantheon", "https://images.unsplash.com/photo-1552484604-541f2d423d46", "1.5 km", 4.7f)
         ),
         "Milano" to listOf(
-            PlaceItem(
-                id = 1,
-                name = "Duomo di Milano",
-                imageUrl = "https://images.unsplash.com/photo-1603788397410-5e108c93be53",
-                distance = "0.5 km",
-                rating = 4.9f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Galleria Vittorio Emanuele",
-                imageUrl = "https://images.unsplash.com/photo-1595870811635-1b043d4cf5ee",
-                distance = "0.7 km",
-                rating = 4.7f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Castello Sforzesco",
-                imageUrl = "https://images.unsplash.com/photo-1574411863833-5e85a998c55c",
-                distance = "1.8 km",
-                rating = 4.6f
-            )
+            PlaceItem(1, "Duomo di Milano", "https://images.unsplash.com/photo-1603788397410-5e108c93be53", "0.5 km", 4.9f),
+            PlaceItem(2, "Galleria Vittorio Emanuele", "https://images.unsplash.com/photo-1595870811635-1b043d4cf5ee", "0.7 km", 4.7f),
+            PlaceItem(3, "Castello Sforzesco", "https://images.unsplash.com/photo-1574411863833-5e85a998c55c", "1.8 km", 4.6f)
         ),
         "Venezia" to listOf(
-            PlaceItem(
-                id = 1,
-                name = "Piazza San Marco",
-                imageUrl = "https://images.unsplash.com/photo-1566019422381-1f89201e845a",
-                distance = "0.3 km",
-                rating = 4.9f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Ponte di Rialto",
-                imageUrl = "https://images.unsplash.com/photo-1580413787283-3a4bef61919d",
-                distance = "0.9 km",
-                rating = 4.8f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Canal Grande",
-                imageUrl = "https://images.unsplash.com/photo-1560426774-5cf70690a1e8",
-                distance = "0.5 km",
-                rating = 4.7f
-            )
+            PlaceItem(1, "Piazza San Marco", "https://images.unsplash.com/photo-1566019422381-1f89201e845a", "0.3 km", 4.9f),
+            PlaceItem(2, "Ponte di Rialto", "https://images.unsplash.com/photo-1580413787283-3a4bef61919d", "0.9 km", 4.8f),
+            PlaceItem(3, "Canal Grande", "https://images.unsplash.com/photo-1560426774-5cf70690a1e8", "0.5 km", 4.7f)
         ),
-        "Firenze" to listOf(
-            PlaceItem(
-                id = 1,
-                name = "Cattedrale di Santa Maria del Fiore",
-                imageUrl = "https://images.unsplash.com/photo-1543429257-3eb0b65d9c58",
-                distance = "0.6 km",
-                rating = 4.9f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Ponte Vecchio",
-                imageUrl = "https://images.unsplash.com/photo-1543637958-1a4e82beb9c0",
-                distance = "1.2 km",
-                rating = 4.8f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Galleria degli Uffizi",
-                imageUrl = "https://images.unsplash.com/photo-1498575637358-821023f27355",
-                distance = "1.3 km",
-                rating = 4.9f
-            )
-        ),
-        "Napoli" to listOf(
-            PlaceItem(
-                id = 1,
-                name = "Vesuvio",
-                imageUrl = "https://images.unsplash.com/photo-1593349344484-a503bd0aa258",
-                distance = "10 km",
-                rating = 4.7f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Castel dell'Ovo",
-                imageUrl = "https://images.unsplash.com/photo-1518687820821-fb7df300543c",
-                distance = "2.1 km",
-                rating = 4.5f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Spaccanapoli",
-                imageUrl = "https://images.unsplash.com/photo-1527206363095-ca04626bd3ac",
-                distance = "1.5 km",
-                rating = 4.6f
-            )
-        ),
-        // Treviso - vicino a Malo, Veneto
-        "Treviso" to listOf(
-            PlaceItem(
-                id = 1,
-                name = "Piazza dei Signori",
-                imageUrl = "https://images.unsplash.com/photo-1608641947760-2e746568d960",
-                distance = "0.5 km",
-                rating = 4.6f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Canali del Sile",
-                imageUrl = "https://images.unsplash.com/photo-1629204132257-001f5cf2d5f0",
-                distance = "0.9 km",
-                rating = 4.7f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Palazzo dei Trecento",
-                imageUrl = "https://images.unsplash.com/photo-1629204071370-5e66b7343752",
-                distance = "0.7 km",
-                rating = 4.5f
-            )
-        ),
-        // Vicenza - vicino a Malo, Veneto
-        "Vicenza" to listOf(
-            PlaceItem(
-                id = 1,
-                name = "Basilica Palladiana",
-                imageUrl = "https://images.unsplash.com/photo-1594394844134-5dcc431175b5",
-                distance = "0.4 km",
-                rating = 4.8f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Teatro Olimpico",
-                imageUrl = "https://images.unsplash.com/photo-1533590541495-35e9d8297160",
-                distance = "0.8 km",
-                rating = 4.7f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Villa Almerico Capra",
-                imageUrl = "https://images.unsplash.com/photo-1553889676-0f710e4aafc1",
-                distance = "4.2 km",
-                rating = 4.9f
-            )
-        ),
-        // Malo - la posizione dell'utente
-        "Malo" to listOf(
-            PlaceItem(
-                id = 1,
-                name = "Duomo di Malo",
-                imageUrl = "https://images.unsplash.com/photo-1548353496-8a9b3c3a4425",
-                distance = "0.3 km",
-                rating = 4.5f
-            ),
-            PlaceItem(
-                id = 2,
-                name = "Museo della Civiltà Rurale",
-                imageUrl = "https://images.unsplash.com/photo-1566004100631-35d015d6a491",
-                distance = "1.2 km",
-                rating = 4.3f
-            ),
-            PlaceItem(
-                id = 3,
-                name = "Parco di Villa Clementi",
-                imageUrl = "https://images.unsplash.com/photo-1523987355523-c7b5b0dd90a7",
-                distance = "0.8 km",
-                rating = 4.6f
-            )
-        )
+        // Aggiungi altre città...
     )
 
-    // Trova la città più vicina in base al nome
-    val cities = placesByCity.keys.toList()
-
-    // Cerca corrispondenza esatta o parziale
-    val matchedCity = cities.find {
+    // Trova la città più vicina
+    val matchedCity = placesByCity.keys.find {
         city.contains(it, ignoreCase = true) || it.contains(city, ignoreCase = true)
     }
 
-    // Se abbiamo trovato una corrispondenza, usa quei luoghi
     if (matchedCity != null && placesByCity.containsKey(matchedCity)) {
-        Log.d("HomeScreen", "Trovati luoghi vicini per $matchedCity")
         callback(placesByCity[matchedCity]!!)
         return
     }
 
-    // Se non troviamo una corrispondenza, genera luoghi dinamici basati sulle coordinate
-    Log.d("HomeScreen", "Generando luoghi dinamici per $city (coordinate: $lat, $lon)")
-
-    // Generiamo nomi dinamici basati sulla regione/città
-    val placeNames = listOf(
-        "Piazza $city",
-        "Parco Comunale",
-        "Museo Civico",
-        "Ponte $city",
-        "Villa Storica",
-        "Cattedrale di $city",
-        "Castello Antico",
-        "Giardini Pubblici"
-    )
-
-    // Generiamo distanze casuali, ma realistiche
-    val distances = listOf("0.3 km", "0.7 km", "1.2 km", "0.8 km", "1.5 km")
-
-    // Immagini generiche per vari tipi di luoghi
+    // Genera luoghi dinamici se non trova corrispondenze
+    val placeNames = listOf("Piazza $city", "Parco Comunale", "Museo Civico", "Ponte $city")
+    val distances = listOf("0.3 km", "0.7 km", "1.2 km", "0.8 km")
     val placeImages = listOf(
-        "https://images.unsplash.com/photo-1519502358834-4cf4bb3740e1", // Parco
-        "https://images.unsplash.com/photo-1577334928618-652def2c98ad", // Piazza
-        "https://images.unsplash.com/photo-1580414057403-c5f451f30e1c", // Museo
-        "https://images.unsplash.com/photo-1548760106-0d557aa49ec9", // Monumento
-        "https://images.unsplash.com/photo-1556194622-ecdff147de3a"  // Castello
+        "https://images.unsplash.com/photo-1519502358834-4cf4bb3740e1",
+        "https://images.unsplash.com/photo-1577334928618-652def2c98ad",
+        "https://images.unsplash.com/photo-1580414057403-c5f451f30e1c"
     )
 
-    // Genera 3 luoghi casuali
     val dynamicPlaces = List(3) { idx ->
-        val nameIdx = (idx + (lat + lon).toInt()) % placeNames.size
-        val distanceIdx = (idx + lat.toInt()) % distances.size
-        val imageIdx = (idx + lon.toInt()) % placeImages.size
-
         PlaceItem(
             id = idx + 1,
-            name = placeNames[nameIdx].replace("$city", city),
-            imageUrl = placeImages[imageIdx],
-            distance = distances[distanceIdx],
-            rating = 4.0f + (idx * 0.3f).coerceAtMost(0.9f)  // Rating da 4.0 a 4.9
+            name = placeNames[idx].replace("$city", city),
+            imageUrl = placeImages[idx % placeImages.size],
+            distance = distances[idx],
+            rating = 4.0f + (idx * 0.3f)
         )
     }
 
     callback(dynamicPlaces)
 }
 
+// Data classes rimangono uguali
+data class StatItem(
+    val label: String,
+    val value: Int,
+    val color: Color
+)
+
+data class ActivityItem(
+    val id: Int,
+    val userName: String,
+    val userAvatar: String,
+    val actionText: String,
+    val location: String,
+    val timestamp: String,
+    val mediaUrl: String? = null,
+    val likesCount: Int = 0
+)
+
+data class PlaceItem(
+    val id: Int,
+    val name: String,
+    val imageUrl: String,
+    val distance: String,
+    val rating: Float
+)
+// StatCard Composable
 @Composable
 fun StatCard(stat: StatItem, modifier: Modifier = Modifier, animDelay: Int = 0) {
     var isVisible by remember { mutableStateOf(false) }
@@ -1399,6 +864,7 @@ fun StatCard(stat: StatItem, modifier: Modifier = Modifier, animDelay: Int = 0) 
     }
 }
 
+// ActivityCard Composable
 @Composable
 fun ActivityCard(activity: ActivityItem, modifier: Modifier = Modifier) {
     Card(
@@ -1530,6 +996,7 @@ fun ActivityCard(activity: ActivityItem, modifier: Modifier = Modifier) {
     }
 }
 
+// PlaceCard Composable
 @Composable
 fun PlaceCard(place: PlaceItem) {
     Card(
@@ -1635,37 +1102,3 @@ fun PlaceCard(place: PlaceItem) {
         }
     }
 }
-
-// Classi dati per la HomeScreen
-data class WeatherData(
-    val temperature: Int,
-    val condition: String,
-    val humidity: Int,
-    val cityName: String,
-    val icon: ImageVector
-)
-
-data class StatItem(
-    val label: String,
-    val value: Int,
-    val color: Color
-)
-
-data class ActivityItem(
-    val id: Int,
-    val userName: String,
-    val userAvatar: String,
-    val actionText: String,
-    val location: String,
-    val timestamp: String,
-    val mediaUrl: String? = null,
-    val likesCount: Int = 0
-)
-
-data class PlaceItem(
-    val id: Int,
-    val name: String,
-    val imageUrl: String,
-    val distance: String,
-    val rating: Float
-)

@@ -1,5 +1,6 @@
 package com.example.frontend_triptales.ui.theme.navigation
 
+import HomeScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*

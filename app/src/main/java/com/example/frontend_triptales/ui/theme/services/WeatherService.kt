@@ -4,66 +4,108 @@ import android.util.Log
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.example.frontend_triptales.api.WeatherService
-import com.example.frontend_triptales.ui.theme.screens.WeatherData
+import com.example.frontend_triptales.ui.theme.services.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.*
 
 /**
- * Servizio centralizzato per gestire le operazioni relative al meteo
- * Implementa pattern singleton per essere accessibile facilmente
+ * Servizio per ottenere dati meteo in tempo reale
  */
-object WeatherManager {
-    private const val TAG = "WeatherManager"
-    private const val TIMEOUT_MS = 5000L // Timeout per le chiamate API (5 secondi)
+object WeatherService {
+    private const val TAG = "WeatherService"
+    private const val API_KEY = "b052bace2ea6693b223b12ed2afea7c7" // La tua chiave OpenWeatherMap
+    private const val WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
+    private const val TIMEOUT_MS = 5000 // 5 secondi di timeout
 
     /**
-     * Ottiene i dati meteo in base alle coordinate geografiche
-     * Con gestione degli errori e fallback automatico
+     * Recupera i dati meteo in base alle coordinate geografiche
      */
-    suspend fun getWeatherData(lat: Double, lon: Double, cityName: String? = null): WeatherData {
+    suspend fun getWeatherByCoordinates(latitude: Double, longitude: Double): WeatherData? {
         return try {
-            // Prova a ottenere i dati meteo entro un timeout specificato
-            val response = withTimeoutOrNull(TIMEOUT_MS) {
+            val weatherData = withTimeoutOrNull(TIMEOUT_MS.toLong()) {
                 withContext(Dispatchers.IO) {
-                    WeatherService.getWeatherByCoordinates(lat, lon)
+                    // Costruisci l'URL con i parametri
+                    val url = URL("$WEATHER_API_URL?lat=$latitude&lon=$longitude&units=metric&lang=it&appid=$API_KEY")
+
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.connectTimeout = TIMEOUT_MS
+                    connection.readTimeout = TIMEOUT_MS
+
+                    try {
+                        val responseCode = connection.responseCode
+                        if (responseCode == HttpURLConnection.HTTP_OK) {
+                            // Leggi la risposta
+                            val response = connection.inputStream.bufferedReader().use { it.readText() }
+                            parseWeatherResponse(response)
+                        } else {
+                            Log.e(TAG, "Errore HTTP: $responseCode")
+                            null
+                        }
+                    } finally {
+                        connection.disconnect()
+                    }
                 }
             }
 
-            if (response != null) {
-                // Conversione dati API
-                val temperature = response.main.temp.toInt()
-                val condition = response.weather.firstOrNull()?.description?.capitalizeFirst() ?: "Sconosciuto"
-                val humidity = response.main.humidity
-
-                // Crea oggetto WeatherData
-                WeatherData(
-                    temperature = temperature,
-                    condition = condition,
-                    humidity = humidity,
-                    cityName = cityName ?: response.name,
-                    icon = selectWeatherIcon(condition)
-                ).also {
-                    Log.d(TAG, "Dati meteo da API: $temperature°C, $condition")
-                }
+            if (weatherData != null) {
+                return weatherData
             } else {
-                Log.w(TAG, "API meteo timeout o risposta nulla, uso dati fallback")
-                generateFallbackWeatherData(lat, lon, cityName)
+                Log.w(TAG, "Timeout o risposta nulla, generando dati fallback")
+                generateFallbackWeatherData(latitude, longitude)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Errore nel recupero dati meteo: ${e.message}", e)
-            generateFallbackWeatherData(lat, lon, cityName)
+            generateFallbackWeatherData(latitude, longitude)
+        }
+    }
+
+    /**
+     * Parsing della risposta JSON dell'API meteo
+     */
+    private fun parseWeatherResponse(jsonResponse: String): WeatherData {
+        try {
+            val json = JSONObject(jsonResponse)
+
+            // Estrai i dati principali
+            val main = json.getJSONObject("main")
+            val temperature = main.getDouble("temp").toInt()
+            val humidity = main.getInt("humidity")
+
+            // Estrai la condizione meteo
+            val weatherArray = json.getJSONArray("weather")
+            val weatherObject = weatherArray.getJSONObject(0)
+            val condition = weatherObject.getString("description").capitalize()
+
+            // Nome della località
+            val cityName = json.getString("name")
+
+            // Scegli l'icona appropriata in base alla condizione
+            val icon = selectWeatherIcon(condition)
+
+            return WeatherData(
+                temperature = temperature,
+                condition = condition,
+                humidity = humidity,
+                cityName = cityName,
+                icon = icon
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Errore nel parsing JSON: ${e.message}", e)
+            throw e
         }
     }
 
     /**
      * Genera dati meteo fallback deterministici in base alle coordinate
      */
-    private fun generateFallbackWeatherData(lat: Double, lon: Double, customCityName: String? = null): WeatherData {
+    private fun generateFallbackWeatherData(latitude: Double, longitude: Double): WeatherData {
         // Hash basato sulle coordinate per ottenere risultati deterministici
-        val hash = (lat.toInt() * 31 + lon.toInt()).absoluteValue
+        val hash = Math.abs((latitude.toInt() * 31 + longitude.toInt()))
 
         val conditions = listOf(
             "Soleggiato", "Nuvoloso", "Parzialmente nuvoloso",
@@ -75,27 +117,20 @@ object WeatherManager {
         val condition = conditions[randomIndex]
 
         // Calcola una temperatura realistica basata sulla latitudine
-        val baseTemp = 30 - (lat / 10).toInt()
+        val baseTemp = 30 - (latitude / 10).toInt()
         val temp = baseTemp + (hash % 10) - 5
 
         // Umidità realistica (30-80%)
         val humidity = 30 + (hash % 50)
 
         // Icona appropriata in base alla condizione
-        val icon = when (condition) {
-            "Soleggiato" -> Icons.Default.WbSunny
-            "Nuvoloso" -> Icons.Default.Cloud
-            "Parzialmente nuvoloso" -> Icons.Default.FilterDrama
-            "Piovoso" -> Icons.Default.Grain
-            "Temporale" -> Icons.Default.FlashOn
-            else -> Icons.Default.Air // Ventoso
-        }
+        val icon = selectWeatherIcon(condition)
 
         return WeatherData(
             temperature = temp.toInt(),
             condition = condition,
             humidity = humidity,
-            cityName = customCityName ?: "Posizione rilevata",
+            cityName = "Posizione rilevata",
             icon = icon
         ).also {
             Log.d(TAG, "Generati dati meteo fallback: $temp°C, $condition")
@@ -117,21 +152,17 @@ object WeatherManager {
         }
     }
 
-    /**
-     * Extensions utili
-     */
-    private fun String.capitalizeFirst(): String {
-        return if (isNotEmpty()) {
-            this[0].uppercase() + substring(1)
-        } else {
-            this
-        }
-    }
-
+    // Extension per controllare se una stringa contiene una delle sottostringhe specificate
     private fun String.containsAny(vararg substrings: String): Boolean {
         return substrings.any { this.contains(it, ignoreCase = true) }
     }
 
-    private val Int.absoluteValue: Int
-        get() = if (this < 0) -this else this
+    // Extension per capitalizzare la prima lettera
+    private fun String.capitalize(): String {
+        return if (this.isNotEmpty()) {
+            this[0].uppercase() + this.substring(1)
+        } else {
+            this
+        }
+    }
 }

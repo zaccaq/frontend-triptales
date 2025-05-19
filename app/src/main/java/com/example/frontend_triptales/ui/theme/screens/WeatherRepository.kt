@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.FilterDrama
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Grain
 import androidx.compose.material.icons.filled.WbSunny
+import com.example.frontend_triptales.ui.theme.services.WeatherData
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
