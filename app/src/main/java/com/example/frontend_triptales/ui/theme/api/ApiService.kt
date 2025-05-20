@@ -239,6 +239,10 @@ interface TripTalesApi {
     @GET("api/trip-groups/{id}/members/")
     suspend fun getGroupMembers(@Path("id") groupId: String): Response<List<GroupMembershipDTO>>
 
+    // Aggiungi questo all'interfaccia TripTalesApi in ApiService.kt
+    @GET("api/trip-groups/{id}/posts/")
+    suspend fun getGroupPosts(@Path("id") groupId: String): Response<List<MessageDTO>>
+
     @FormUrlEncoded
     @POST("api/trip-groups/{id}/send_message/")
     suspend fun sendMessage(

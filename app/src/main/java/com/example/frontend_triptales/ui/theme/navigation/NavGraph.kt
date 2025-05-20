@@ -79,7 +79,6 @@ fun TripTalesApp() {
                 }
 
                 HomeScreen(
-                    userName = userName,
                     onProfileClick = { navController.navigate(Screen.Profile.route) },
                     // Aggiungi questo nuovo callback per l'assistente AI
                     onAIAssistantClick = { navController.navigate(Screen.AIAssistant.route) }
