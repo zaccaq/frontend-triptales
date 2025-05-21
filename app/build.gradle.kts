@@ -76,6 +76,14 @@ dependencies {
 // Coroutines
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
 
+    // Gemini AI SDK
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+    // Per il logging
+    implementation("com.jakewharton.timber:timber:5.0.1")
+
+    // Coroutines
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
+
 
     implementation("com.auth0.android:jwtdecode:2.0.2")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")

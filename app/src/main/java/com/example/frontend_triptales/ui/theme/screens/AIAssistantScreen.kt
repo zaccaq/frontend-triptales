@@ -1,5 +1,6 @@
 package com.example.frontend_triptales.ui.theme.screens
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -15,213 +16,143 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.ai.client.generativeai.GenerativeModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+// Modello di dati per i messaggi
 data class AIMessage(
     val content: String,
     val isFromUser: Boolean,
     val timestamp: Long = System.currentTimeMillis()
 )
 
+// ViewModel per gestire l'interazione con Gemini
+class GeminiChatViewModel : ViewModel() {
+    // API Key di Gemini (dovresti memorizzarla in modo sicuro)
+    private val apiKey = "AIzaSyDyuW48jdaRef8ZZW1YS_JmV-VOfHH357s"
+
+    // Modello generativo Gemini
+    private val generativeModel by lazy {
+        GenerativeModel(
+            modelName = "gemini-2.0-flash",
+            apiKey = apiKey
+        )
+    }
+
+    // Stato dei messaggi
+    private val _messages = MutableStateFlow<List<AIMessage>>(emptyList())
+    val messages: StateFlow<List<AIMessage>> = _messages.asStateFlow()
+
+    // Stato di digitazione dell'AI
+    private val _isTyping = MutableStateFlow(false)
+    val isTyping: StateFlow<Boolean> = _isTyping.asStateFlow()
+
+    // Inizializza la chat con un messaggio di benvenuto
+    init {
+        val welcomeMessage = AIMessage(
+            "Ciao! Sono TripBuddy, il tuo assistente di viaggio alimentato da Gemini AI. Posso aiutarti con suggerimenti per la tua prossima avventura, consigliarti luoghi da visitare, ristoranti locali, e molto altro. Dove vorresti andare oggi?",
+            isFromUser = false
+        )
+        _messages.value = listOf(welcomeMessage)
+    }
+
+    // Funzione per inviare un messaggio a Gemini e ricevere una risposta
+    fun sendMessage(userMessage: String) {
+        // Aggiungi il messaggio dell'utente alla lista
+        _messages.value = _messages.value + AIMessage(userMessage, isFromUser = true)
+
+        // Imposta lo stato di digitazione
+        _isTyping.value = true
+
+        viewModelScope.launch {
+            try {
+                // Prepara il contesto per Gemini con istruzioni specifiche sui viaggi
+                val prompt = """
+                    Sei TripBuddy, un assistente di viaggio esperto e amichevole in TripTales. Fornisci informazioni accurate e aggiornate su destinazioni di viaggio, consigli su attrazioni, ristoranti, hotel, trasporti, e tutto ciò che riguarda i viaggi. Rispondi in modo conciso, informativo e personalizzato.
+                    
+                    Quando ti vengono richieste informazioni specifiche su una destinazione, includi:
+                    - Attrazioni principali da visitare
+                    - Consigli su cibo e ristoranti locali
+                    - Informazioni pratiche per i viaggiatori
+                    
+                    Se non conosci una risposta specifica, fornisci informazioni generali utili sull'argomento richiesto senza inventare dettagli falsi.
+                    
+                    La tua risposta deve essere in italiano e in tono conversazionale. Mantieni le risposte concise ma informative.
+                    
+                    La domanda dell'utente è: $userMessage
+                """.trimIndent()
+
+                // Aggiungi un log prima dell'invio della richiesta
+                Log.d("GeminiChat", "Inviando richiesta a Gemini: $userMessage")
+
+                // Invio della richiesta a Gemini con gestione più robusta
+                val response = try {
+                    generativeModel.generateContent(prompt)
+                } catch (e: Exception) {
+                    Log.e("GeminiChat", "Errore nella generazione del contenuto", e)
+                    null
+                }
+
+                // Estrai la risposta testuale con controlli migliori
+                if (response != null && response.text != null) {
+                    val responseText = response.text!!.trim()
+                        .ifEmpty { "Mi dispiace, ho ricevuto una risposta vuota. Posso aiutarti con qualcos'altro riguardo i tuoi viaggi?" }
+
+                    // Aggiungi la risposta alla lista dei messaggi
+                    _messages.value = _messages.value + AIMessage(responseText, isFromUser = false)
+                    Log.d("GeminiChat", "Risposta ricevuta: $responseText")
+                } else {
+                    // Gestione caso in cui la risposta è nulla
+                    _messages.value = _messages.value + AIMessage(
+                        "Mi dispiace, non sono riuscito a elaborare la tua richiesta. Puoi formularla in modo diverso?",
+                        isFromUser = false
+                    )
+                    Log.e("GeminiChat", "Risposta nulla da Gemini")
+                }
+            } catch (e: Exception) {
+                // Gestione degli errori con log dettagliato
+                Log.e("GeminiChat", "Errore nell'elaborazione della richiesta", e)
+                _messages.value = _messages.value + AIMessage(
+                    "Mi dispiace, sto riscontrando dei problemi tecnici. Riprova tra poco o verifica la tua connessione internet.",
+                    isFromUser = false
+                )
+            } finally {
+                // Disattiva lo stato di digitazione
+                _isTyping.value = false
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AIAssistantScreen(
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    viewModel: GeminiChatViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
-    // Stato per i messaggi
-    var messages by remember { mutableStateOf(listOf<AIMessage>()) }
+
+    // Recupera lo stato dal ViewModel
+    val messages by viewModel.messages.collectAsState()
+    val isTyping by viewModel.isTyping.collectAsState()
+
+    // Input utente
     var userInput by remember { mutableStateOf("") }
-    var isTyping by remember { mutableStateOf(false) }
 
-    // Messaggio di benvenuto iniziale
-    LaunchedEffect(Unit) {
-        val welcomeMessage = AIMessage(
-            "Ciao! Sono TripBuddy, l'assistente AI di TripTales. Posso aiutarti con suggerimenti per il tuo viaggio, indicarti attrazioni, consigliarti ristoranti o rispondere a qualsiasi altra domanda. Come posso aiutarti oggi?",
-            isFromUser = false
-        )
-        messages = listOf(welcomeMessage)
-    }
-
-    // Funzione per simulare la risposta dell'AI
-    fun generateAIResponse(query: String) {
-        val lowercase = query.toLowerCase()
-
-        // Aggiungi la domanda dell'utente ai messaggi
-        val userMessage = AIMessage(query, isFromUser = true)
-        messages = messages + userMessage
-
-        // Indica che l'AI sta digitando
-        isTyping = true
-
-        // Scroll alla fine della lista
-        coroutineScope.launch {
-            listState.animateScrollToItem(messages.size - 1)
-        }
-
-        // Simula il ritardo di digitazione dell'AI
-        coroutineScope.launch {
-            delay(1000) // Simula il tempo di risposta
-
-            // Ottieni dati in tempo reale quando necessario
-            val response = when {
-                // ORARIO E DATA
-                lowercase.contains("che ora") || lowercase.contains("che ore") ||
-                        lowercase.contains("orario") || lowercase.contains("adesso che ore") -> {
-                    val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                    "Sono le $currentTime."
-                }
-
-                lowercase.contains("che giorno") || lowercase.contains("data oggi") ||
-                        lowercase.contains("oggi che giorno") -> {
-                    val currentDate = SimpleDateFormat("EEEE d MMMM yyyy", Locale.ITALIAN).format(Date())
-                    "Oggi è $currentDate."
-                }
-
-                // METEO E TEMPERATURA
-                lowercase.contains("temperatura") || lowercase.contains("che temp") ||
-                        lowercase.contains("quanto fa freddo") || lowercase.contains("quanto fa caldo") -> {
-                    val currentTemp = (15..30).random() // Simuliamo una temperatura casuale
-                    "In questa posizione la temperatura attuale è di $currentTemp°C."
-                }
-
-                lowercase.contains("meteo") || lowercase.contains("tempo") ||
-                        lowercase.contains("previsioni") -> {
-                    val conditions = listOf("soleggiato", "nuvoloso", "parzialmente nuvoloso", "piovoso", "ventoso")
-                    val condition = conditions.random()
-                    "Attualmente il tempo è $condition. Le previsioni indicano che rimarrà così per le prossime ore."
-                }
-
-                // INFORMAZIONI GENERALI
-                lowercase.contains("chi sei") || lowercase.contains("come ti chiami") -> {
-                    "Sono TripBuddy, l'assistente AI di TripTales. Sono qui per aiutarti con informazioni sui viaggi, suggerimenti, e qualsiasi altra domanda tu possa avere!"
-                }
-
-                lowercase.contains("cosa puoi fare") || lowercase.contains("come puoi aiutarmi") -> {
-                    "Posso aiutarti in molti modi! Posso fornirti informazioni su destinazioni di viaggio, suggerirti attrazioni turistiche, ristoranti, e hotel. Posso anche dirti l'ora attuale, le condizioni meteo, rispondere a domande generali e molto altro ancora. Chiedimi pure ciò che ti serve!"
-                }
-
-                // DOMANDE PERSONALI
-                lowercase.contains("come stai") -> {
-                    "Sto bene, grazie! Sono sempre pronto ad aiutarti. E tu come stai oggi?"
-                }
-
-                lowercase.startsWith("grazie") || lowercase == "grazie" -> {
-                    "Di nulla! Sono qui per aiutarti. C'è altro che posso fare per te?"
-                }
-
-                // VIAGGIO - CITTÀ
-                lowercase.contains("roma") -> {
-                    "Roma è una città straordinaria! Non puoi perderti il Colosseo, la Fontana di Trevi, i Musei Vaticani e Piazza Navona. Per il cibo, ti consiglio Trastevere per un'autentica esperienza culinaria romana."
-                }
-
-                lowercase.contains("firenze") -> {
-                    "Firenze è la culla del Rinascimento! Da vedere: la Cattedrale di Santa Maria del Fiore, la Galleria degli Uffizi, il Ponte Vecchio e Piazzale Michelangelo per una vista panoramica. Assaggia la bistecca alla fiorentina!"
-                }
-
-                lowercase.contains("venezia") -> {
-                    "Venezia è unica al mondo! Esplora Piazza San Marco, il Ponte di Rialto, fai un giro in gondola e perdirti tra i canali e le calli. Non dimenticare di provare i cicchetti, piccoli spuntini veneziani."
-                }
-
-                lowercase.contains("napoli") -> {
-                    "Napoli è vibrante e autentica! Visita il centro storico, Spaccanapoli, il Museo Archeologico e certo, la pizza - Napoli è la patria della pizza più buona del mondo. Da non perdere anche gli scavi di Pompei nelle vicinanze."
-                }
-
-                lowercase.contains("milano") -> {
-                    "Milano è il centro della moda e del design! Visita il Duomo, il Castello Sforzesco, ammira L'Ultima Cena di Leonardo da Vinci e fai shopping nella Galleria Vittorio Emanuele II. Milano è anche famosa per l'aperitivo!"
-                }
-
-                // CIBO E RISTORANTI
-                lowercase.contains("mangiare") || lowercase.contains("cibo") ||
-                        lowercase.contains("ristorante") || lowercase.contains("ristoranti") -> {
-                    "L'Italia è famosa per la sua cucina! Ogni regione ha specialità uniche: pasta e pizza a Napoli, risotto a Milano, bistecca a Firenze, cicchetti a Venezia. Ti consiglio di provare i ristoranti locali piuttosto che quelli turistici."
-                }
-
-                // ALLOGGIO
-                lowercase.contains("hotel") || lowercase.contains("albergo") ||
-                        lowercase.contains("dormire") || lowercase.contains("ostello") -> {
-                    "Per l'alloggio, dipende dal tuo budget e preferenze. Gli hotel nel centro città sono comodi ma costosi. B&B e agriturismi offrono un'esperienza più autentica. Considera anche Airbnb per soggiorni più lunghi. Prenota con anticipo, soprattutto in alta stagione!"
-                }
-
-                // TRASPORTI
-                lowercase.contains("treno") || lowercase.contains("treni") -> {
-                    "I treni in Italia sono un ottimo modo per spostarsi tra le città. Trenitalia e Italo offrono collegamenti frequenti tra i principali centri urbani. Puoi acquistare i biglietti online o in stazione, ma è consigliabile prenotare in anticipo per i treni ad alta velocità."
-                }
-
-                lowercase.contains("noleggiare") || lowercase.contains("auto") || lowercase.contains("macchina") -> {
-                    "Noleggiare un'auto è una buona opzione per esplorare le zone rurali e i piccoli borghi. Tieni presente che nelle grandi città il traffico può essere caotico e i parcheggi costosi. Inoltre, in molti centri storici esistono zone a traffico limitato (ZTL) dove non puoi entrare senza permesso."
-                }
-
-                // LINGUA
-                lowercase.contains("italiano") || lowercase.contains("lingua") || lowercase.contains("parlare") -> {
-                    "Anche se nelle località turistiche molte persone parlano inglese, imparare qualche frase in italiano può aiutarti a connetterti con i locali. Frasi utili: 'Buongiorno' (buon giorno), 'Grazie' (grazie), 'Per favore' (per favore), 'Quanto costa?' (quanto costa?)."
-                }
-
-                // FUSO ORARIO
-                lowercase.contains("fuso orario") || lowercase.contains("ora locale") -> {
-                    "L'Italia segue il fuso orario dell'Europa Centrale (CET), che è UTC+1. Durante l'ora legale (da fine marzo a fine ottobre), l'orario diventa UTC+2 (CEST)."
-                }
-
-                // MONETA
-                lowercase.contains("euro") || lowercase.contains("moneta") || lowercase.contains("valuta") ||
-                        lowercase.contains("soldi") || lowercase.contains("cambio") -> {
-                    "La valuta in Italia è l'Euro (€). Puoi prelevare contanti dagli sportelli ATM (chiamati 'Bancomat'), che sono ampiamente disponibili. Le carte di credito sono accettate nei negozi e ristoranti più grandi, ma è sempre utile avere un po' di contanti per i piccoli acquisti e nelle aree rurali."
-                }
-
-                // SICUREZZA
-                lowercase.contains("sicurezza") || lowercase.contains("sicuro") || lowercase.contains("pericoloso") -> {
-                    "L'Italia è generalmente un paese sicuro per i turisti. Come in ogni destinazione turistica, è consigliabile fare attenzione ai borseggiatori nelle aree affollate. Tieni i tuoi oggetti di valore in luoghi sicuri e sii particolarmente vigile nelle stazioni ferroviarie e sui mezzi pubblici affollati."
-                }
-
-                // DOMANDE SULL'APP
-                lowercase.contains("come funziona") && lowercase.contains("app") -> {
-                    "TripTales è un'app per condividere le tue esperienze di viaggio. Puoi creare gruppi, pubblicare post con foto, commentare e mettere mi piace ai post degli altri utenti. Puoi anche guadagnare badge completando determinate attività. Se hai domande specifiche su una funzionalità, fammi sapere!"
-                }
-
-                lowercase.contains("badge") -> {
-                    "In TripTales puoi guadagnare badge completando diverse attività. Alcuni badge includono: 'Esploratore' (visita 5+ luoghi diversi), 'Fotografo' (carica 20+ foto), 'Traduttore' (usa OCR in 3+ post), 'Osservatore' (riconosci oggetti in 10+ post) e 'Social' (ottieni 15+ like sui tuoi post)."
-                }
-
-                // Conversazioni generali
-                lowercase.startsWith("ciao") || lowercase.startsWith("salve") ||
-                        lowercase.startsWith("buongiorno") || lowercase.startsWith("buonasera") -> {
-                    "Ciao! Come posso aiutarti oggi con i tuoi piani di viaggio o con qualsiasi altra informazione?"
-                }
-
-                // RICERCHE COMPLESSE - SIMULAZIONE
-                lowercase.contains("migliore periodo") || lowercase.contains("quando andare") ||
-                        lowercase.contains("stagione migliore") -> {
-                    "Il periodo migliore per visitare l'Italia dipende dalla regione e dalle tue preferenze. In generale:\n" +
-                            "- Primavera (aprile-giugno): clima mite e meno turisti\n" +
-                            "- Estate (giugno-agosto): alta stagione, caldo e affollato\n" +
-                            "- Autunno (settembre-ottobre): clima ancora piacevole e meno folla\n" +
-                            "- Inverno (novembre-marzo): ideale per città d'arte e sci sulle Alpi"
-                }
-
-                // RISPOSTA DEFAULT PER QUALSIASI ALTRA DOMANDA
-                else -> {
-                    "Mi dispiace, non ho informazioni specifiche su questo argomento. Posso aiutarti con dettagli sulle destinazioni turistiche in Italia, consigli di viaggio, informazioni sul meteo, orari e altre questioni pratiche. Come posso esserti utile?"
-                }
-            }
-
-            // Aggiungi la risposta dell'AI
-            val aiMessage = AIMessage(response, isFromUser = false)
-            messages = messages + aiMessage
-
-            // L'AI ha finito di digitare
-            isTyping = false
-
-            // Scroll alla fine della lista
+    // Effetto per scrollare alla fine della lista quando arrivano nuovi messaggi
+    LaunchedEffect(messages.size, isTyping) {
+        if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
@@ -229,7 +160,7 @@ fun AIAssistantScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("TripBuddy AI Assistant") },
+                title = { Text("TripBuddy Gemini AI") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
@@ -270,26 +201,34 @@ fun AIAssistantScreen(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF5AC8FA))
+                                    .background(Color(0xFF34A853)) // Verde Google per Gemini
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF5AC8FA))
+                                    .background(Color(0xFF4285F4)) // Blu Google per Gemini
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF5AC8FA))
+                                    .background(Color(0xFFEA4335)) // Rosso Google per Gemini
                             )
                         }
                     }
                 }
             }
+
+            // Suggerimenti di domande rapide
+            TravelSuggestionChips(
+                suggestions = travelSuggestions,
+                onSuggestionClick = { suggestion ->
+                    userInput = suggestion
+                }
+            )
 
             // Barra di input
             Card(
@@ -323,18 +262,18 @@ fun AIAssistantScreen(
                         maxLines = 3
                     )
 
-                    // Pulsante invio
+                    // Pulsante invio con i colori di Gemini
                     IconButton(
                         onClick = {
                             if (userInput.isNotBlank() && !isTyping) {
-                                generateAIResponse(userInput)
+                                viewModel.sendMessage(userInput)
                                 userInput = ""
                             }
                         },
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF5AC8FA))
+                            .background(Color(0xFF4285F4)) // Colore principale di Google
                     ) {
                         Icon(
                             Icons.Default.Send,
@@ -352,9 +291,9 @@ fun AIAssistantScreen(
 fun MessageBubble(message: AIMessage) {
     val alignment = if (message.isFromUser) Alignment.End else Alignment.Start
     val backgroundColor = if (message.isFromUser) {
-        Color(0xFF5AC8FA)
+        Color(0xFF4285F4) // Blu Google per messaggi utente
     } else {
-        Color(0xFFE8E8E8)
+        Color(0xFFE8E8E8) // Grigio chiaro per messaggi AI
     }
     val textColor = if (message.isFromUser) Color.White else Color.Black
 
@@ -399,63 +338,59 @@ fun MessageBubble(message: AIMessage) {
     }
 }
 
-// Alcune caratteristiche suggerite di viaggio per una futura implementazione
-data class TravelSuggestion(
-    val id: String,
-    val title: String,
-    val description: String,
-    val imageUrl: String
+// Classe per i suggerimenti di viaggio
+data class TravelSuggestion(val id: String, val text: String)
+
+// Lista di suggerimenti predefiniti relativi ai viaggi
+val travelSuggestions = listOf(
+    TravelSuggestion("1", "Cosa vedere a Roma?"),
+    TravelSuggestion("2", "I migliori ristoranti di Firenze"),
+    TravelSuggestion("3", "Spiagge più belle della Sardegna"),
+    TravelSuggestion("4", "Come muoversi a Venezia"),
+    TravelSuggestion("5", "Quando visitare la Sicilia"),
+    TravelSuggestion("6", "Consigli per viaggiare in Europa")
 )
 
 @Composable
-fun SuggestionChips(suggestions: List<TravelSuggestion>, onSuggestionClick: (String) -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+fun TravelSuggestionChips(
+    suggestions: List<TravelSuggestion>,
+    onSuggestionClick: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
         Text(
-            "Domande suggerite:",
+            "Suggerimenti:",
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        LazyColumn(
+            modifier = Modifier.height(80.dp),
+            contentPadding = PaddingValues(bottom = 8.dp)
         ) {
-            suggestions.forEach { suggestion ->
-                SuggestionChip(
-                    onClick = { onSuggestionClick(suggestion.title) },
-                    label = { Text(suggestion.title) }
-                )
+            val rows = suggestions.chunked(2)
+            items(rows) { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowItems.forEach { suggestion ->
+                        SuggestionChip(
+                            onClick = { onSuggestionClick(suggestion.text) },
+                            label = { Text(suggestion.text) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    // Se c'è un numero dispari di elementi, aggiungi uno spazio vuoto
+                    if (rowItems.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
 }
-
-// Lista di suggerimenti di viaggio predefiniti che potrebbero essere mostrati all'utente
-val DEFAULT_SUGGESTIONS = listOf(
-    TravelSuggestion(
-        id = "1",
-        title = "Cosa vedere a Roma?",
-        description = "Attrazioni principali da visitare a Roma",
-        imageUrl = "https://images.unsplash.com/photo-1552832230-c0197dd311b5"
-    ),
-    TravelSuggestion(
-        id = "2",
-        title = "Migliori ristoranti a Firenze",
-        description = "Consigli su dove mangiare a Firenze",
-        imageUrl = "https://images.unsplash.com/photo-1564501049559-0b54b6f0dc1b"
-    ),
-    TravelSuggestion(
-        id = "3",
-        title = "Trasporti a Venezia",
-        description = "Come muoversi a Venezia",
-        imageUrl = "https://images.unsplash.com/photo-1514890547357-a9ee288728e0"
-    ),
-    TravelSuggestion(
-        id = "4",
-        title = "Hotel economici a Napoli",
-        description = "Dove alloggiare a Napoli con un budget limitato",
-        imageUrl = "https://images.unsplash.com/photo-1580655653885-65763b2597d0"
-    )
-)
