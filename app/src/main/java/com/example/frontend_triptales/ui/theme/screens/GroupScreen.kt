@@ -40,7 +40,7 @@ fun GroupScreen(
     onCreateGroupClick: () -> Unit,
     onJoinGroupClick: () -> Unit,
     onGroupClick: (String) -> Unit,
-    onInvitesClick: () -> Unit  // Nuovo parametro per gestire il click sull'icona delle notifiche
+    onInvitesClick: () -> Unit
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -50,12 +50,12 @@ fun GroupScreen(
     var groups by remember { mutableStateOf<List<GroupItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var pendingInvites by remember { mutableStateOf(0) } // Contatore degli inviti in attesa
+    var pendingInvites by remember { mutableStateOf(0) }
 
     // Carica i gruppi dell'utente e gli inviti in attesa
     LaunchedEffect(Unit) {
         val token = sessionManager.getToken()
-        Log.d("GroupScreen", "Token: ${token?.take(20)}...") // Debug del token
+        Log.d("GroupScreen", "Token: ${token?.take(20)}...")
 
         coroutineScope.launch {
             try {
@@ -68,6 +68,7 @@ fun GroupScreen(
 
                 if (response.isSuccessful && response.body() != null) {
                     groups = response.body()!!.map { group ->
+                        Log.d("GroupScreen", "Gruppo: ${group.name}, Membri: ${group.memberCount}")
                         GroupItem(
                             id = group.id.toString(),
                             name = group.name,
@@ -75,17 +76,19 @@ fun GroupScreen(
                             memberCount = group.memberCount
                         )
                     }
+                    Log.d("GroupScreen", "Caricati ${groups.size} gruppi")
                 } else {
                     errorMessage = "Errore nel caricamento dei gruppi"
-                    Log.e("GroupScreen", "Errore API: ${response.code()} ${response.errorBody()?.string()}")
+                    val errorBody = response.errorBody()?.string()
+                    Log.e("GroupScreen", "Errore API: ${response.code()} $errorBody")
                 }
 
                 // Carica gli inviti in attesa
                 try {
                     val invitesResponse = api.getMyInvites()
                     if (invitesResponse.isSuccessful && invitesResponse.body() != null) {
-                        // Aggiorna il contatore degli inviti
                         pendingInvites = invitesResponse.body()!!.size
+                        Log.d("GroupScreen", "Inviti in attesa: $pendingInvites")
                     } else {
                         Log.e("GroupScreen", "Errore nel caricamento degli inviti: ${invitesResponse.code()}")
                     }
@@ -135,7 +138,6 @@ fun GroupScreen(
                 .padding(horizontal = 16.dp)
         ) {
             if (isLoading) {
-                // Mostra un indicatore di caricamento
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -145,7 +147,6 @@ fun GroupScreen(
                     CircularProgressIndicator(color = Color(0xFF5AC8FA))
                 }
             } else if (errorMessage != null) {
-                // Mostra errore
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -153,14 +154,45 @@ fun GroupScreen(
                         .weight(1f)
                         .padding(16.dp)
                 ) {
-                    Text(
-                        errorMessage!!,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            errorMessage!!,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                // Ricarica i dati
+                                coroutineScope.launch {
+                                    try {
+                                        isLoading = true
+                                        errorMessage = null
+                                        val api = ServizioApi.getAuthenticatedClient(context)
+                                        val response = api.getMyGroups()
+                                        if (response.isSuccessful && response.body() != null) {
+                                            groups = response.body()!!.map { group ->
+                                                GroupItem(
+                                                    id = group.id.toString(),
+                                                    name = group.name,
+                                                    lastActivity = formatLastActivity(group.lastActivityDate),
+                                                    memberCount = group.memberCount
+                                                )
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        errorMessage = "Errore di connessione: ${e.message}"
+                                    } finally {
+                                        isLoading = false
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("Riprova")
+                        }
+                    }
                 }
             } else if (groups.isEmpty()) {
-                // Nessun gruppo trovato
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -175,7 +207,6 @@ fun GroupScreen(
                     )
                 }
             } else {
-                // Mostra la lista dei gruppi
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -206,7 +237,7 @@ fun GroupScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedButton(
-                onClick = onJoinGroupClick, // Ora questo callback navigherà alla JoinGroupScreen
+                onClick = onJoinGroupClick,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -222,17 +253,35 @@ fun GroupScreen(
 private fun formatLastActivity(dateString: String?): String {
     if (dateString == null) return "Nessuna attività"
 
-    try {
-        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS", Locale.getDefault())
-        val date = inputFormat.parse(dateString)
+    return try {
+        // Prova diversi formati di data
+        val inputFormats = listOf(
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS", Locale.getDefault()),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSSS", Locale.getDefault()),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.getDefault()),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+        )
 
-        // Calcola la differenza con la data corrente
+        var date: Date? = null
+        for (format in inputFormats) {
+            try {
+                date = format.parse(dateString)
+                break
+            } catch (e: Exception) {
+                // Continua con il prossimo formato
+                continue
+            }
+        }
+
+        if (date == null) {
+            return "Data sconosciuta"
+        }
+
         val now = Calendar.getInstance()
         val activityTime = Calendar.getInstance()
         activityTime.time = date
 
-        // Stessa data
-        return when {
+        when {
             now.get(Calendar.DATE) == activityTime.get(Calendar.DATE) &&
                     now.get(Calendar.MONTH) == activityTime.get(Calendar.MONTH) &&
                     now.get(Calendar.YEAR) == activityTime.get(Calendar.YEAR) -> {
@@ -247,24 +296,22 @@ private fun formatLastActivity(dateString: String?): String {
                     else -> "Oggi"
                 }
             }
-            // Ieri
             now.get(Calendar.DATE) - activityTime.get(Calendar.DATE) == 1 &&
                     now.get(Calendar.MONTH) == activityTime.get(Calendar.MONTH) &&
                     now.get(Calendar.YEAR) == activityTime.get(Calendar.YEAR) -> "Ieri"
-            // Questa settimana
             now.get(Calendar.WEEK_OF_YEAR) == activityTime.get(Calendar.WEEK_OF_YEAR) &&
                     now.get(Calendar.YEAR) == activityTime.get(Calendar.YEAR) -> {
                 val dayFormat = SimpleDateFormat("EEEE", Locale.ITALIAN)
                 dayFormat.format(date)
             }
-            // Altro
             else -> {
                 val dateFormat = SimpleDateFormat("dd MMM", Locale.ITALIAN)
                 dateFormat.format(date)
             }
         }
     } catch (e: Exception) {
-        return "Data sconosciuta"
+        Log.e("GroupScreen", "Errore nel parsing della data: $dateString", e)
+        "Data sconosciuta"
     }
 }
 
@@ -316,7 +363,8 @@ fun GroupCard(group: GroupItem, onClick: () -> Unit) {
             Text(
                 text = "${group.memberCount} 👤",
                 fontWeight = FontWeight.Medium,
-                fontSize = 16.sp
+                fontSize = 16.sp,
+                color = if (group.memberCount > 0) Color.Black else Color.Red
             )
         }
     }
