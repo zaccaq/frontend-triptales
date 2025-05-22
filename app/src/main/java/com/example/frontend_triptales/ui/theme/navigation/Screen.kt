@@ -14,6 +14,9 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object GroupChat : Screen("group_chat/{groupId}", "Chat", Icons.Default.Send) {
         fun createRoute(groupId: String) = "group_chat/$groupId"
     }
+    object GroupMap : Screen("group_map/{groupId}", "Mappa Gruppo", Icons.Default.Map) {
+        fun createRoute(groupId: String) = "group_map/$groupId"
+    }
     object Profile : Screen("profile", "Profilo", Icons.Default.Person)
     object Leaderboard : Screen("leaderboard", "Classifica", Icons.Default.Leaderboard)
     object GroupLeaderboard : Screen("group_leaderboard/{groupId}", "Classifica", Icons.Default.Leaderboard) {

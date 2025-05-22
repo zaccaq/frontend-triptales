@@ -49,7 +49,8 @@ import java.util.*
 fun GroupChatScreen(
     groupId: String,
     onBackClick: () -> Unit,
-    onInviteClick: (String) -> Unit
+    onInviteClick: (String) -> Unit,
+    onMapClick: (String) -> Unit = {} // Nuovo parametro
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }

@@ -10,8 +10,11 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.LatLng
-import kotlinx.coroutines.tasks.await
+// AGGIUNGI QUESTI IMPORT MANCANTI:
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 private const val TAG = "LocationUtils"
 private const val LOCATION_TIMEOUT_MS = 5000L // 5 secondi timeout per ottenere la posizione
@@ -42,7 +45,17 @@ fun rememberUserLocation(): LatLng? {
                 // Ottieni posizione con timeout
                 val locationResult = withTimeoutOrNull(LOCATION_TIMEOUT_MS) {
                     try {
-                        val lastLocation = fusedLocationClient.lastLocation.await()
+                        // SOSTITUISCI await() con suspendCancellableCoroutine
+                        val lastLocation = suspendCancellableCoroutine { continuation ->
+                            fusedLocationClient.lastLocation
+                                .addOnSuccessListener { location ->
+                                    continuation.resume(location)
+                                }
+                                .addOnFailureListener { exception ->
+                                    continuation.resumeWithException(exception)
+                                }
+                        }
+
                         if (lastLocation != null) {
                             LatLng(lastLocation.latitude, lastLocation.longitude)
                         } else {

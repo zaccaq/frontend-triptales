@@ -12,6 +12,7 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.POST
@@ -188,6 +189,38 @@ data class WeatherSystem(
     val sunset: Long
 )
 
+data class LocationPostResponse(
+    val id: Int,
+    val title: String,
+    val content: String,
+    val latitude: Double,
+    val longitude: Double,
+    val location_name: String,
+    val created_at: String,
+    val author: UserDTO,
+    val media: List<PostMediaDTO>? = null
+)
+
+data class GroupMapResponse(
+    val group_name: String,
+    val group_location: String,
+    val posts: List<MapPostDTO>
+)
+
+data class MapPostDTO(
+    val id: Int,
+    val title: String,
+    val content: String,
+    val latitude: Double,
+    val longitude: Double,
+    val location_name: String,
+    val created_at: String,
+    val author: UserDTO,
+    val image_url: String?,
+    val likes_count: Int,
+    val user_has_liked: Boolean
+)
+
 
 interface OpenWeatherMapApi {
     @GET("data/2.5/weather")
@@ -288,6 +321,29 @@ interface TripTalesApi {
 
     @POST("api/trip-groups/{id}/join/")
     suspend fun joinGroup(@Path("id") groupId: String): Response<GroupMembershipDTO>
+
+    // Nuovi endpoint per la mappa del gruppo
+    @GET("api/trip-groups/{id}/map_posts/")
+    suspend fun getGroupMapPosts(@Path("id") groupId: String): Response<GroupMapResponse>
+
+    @Multipart
+    @POST("api/trip-groups/{id}/add_location_post/")
+    suspend fun addLocationPost(
+        @Path("id") groupId: String,
+        @Part("title") title: RequestBody,
+        @Part("content") content: RequestBody,
+        @Part("latitude") latitude: RequestBody,
+        @Part("longitude") longitude: RequestBody,
+        @Part("location_name") locationName: RequestBody,
+        @Part image: MultipartBody.Part? = null
+    ): Response<LocationPostResponse>
+
+    // Endpoint per like/unlike post
+    @POST("api/diary-posts/{id}/like/")
+    suspend fun likePost(@Path("id") postId: Int): Response<Any>
+
+    @DELETE("api/diary-posts/{id}/like/")
+    suspend fun unlikePost(@Path("id") postId: Int): Response<Any>
 }
 
 object WeatherService {
@@ -336,7 +392,7 @@ object WeatherService {
 object ServizioApi {
     // URL per diversi ambienti
     private const val EMULATOR_URL = "http://10.0.2.2:8000/"
-    private const val LOCAL_DEVICE_URL = "http://10.0.2.2:8000/"
+    private const val LOCAL_DEVICE_URL = "https://564d-79-8-186-194.ngrok-free.app/"
     private const val PRODUCTION_URL = "https://api.triptales.example.com/"
 
     // Tempo di timeout per le richieste

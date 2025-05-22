@@ -120,6 +120,16 @@ fun TripTalesApp() {
                     }
                 )
             }
+            composable(
+                route = Screen.GroupMap.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
+                GroupMapScreen(
+                    groupId = groupId,
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onBackClick = { navController.popBackStack() },
