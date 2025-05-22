@@ -261,7 +261,10 @@ fun GroupChatScreen(
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Crea post", tint = Color(0xFF5AC8FA))
                 }
 
-                IconButton(onClick = { /* logica membri */ }) {
+                IconButton(onClick = {
+                    loadGroupMembers()
+                    showMembersDialog = true
+                }) {
                     Icon(Icons.Default.Group, contentDescription = "Membri del gruppo", tint = Color(0xFF5AC8FA))
                 }
 
