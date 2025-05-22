@@ -29,7 +29,9 @@ fun TripTalesApp() {
                     Screen.Login.route,
                     Screen.Register.route,
                     Screen.CreateGroup.route,
+                    Screen.CreatePost.route,
                     "group_chat/",
+                    "create_post/", // Aggiungi anche questa
                     Screen.InvitesList.route,
                     "invite_to_group/",
                     Screen.AIAssistant.route // Aggiungi qui la rotta dell'AI per nascondere la bottom bar
@@ -72,6 +74,22 @@ fun TripTalesApp() {
                     onNavigateToLogin = { navController.popBackStack() }
                 )
             }
+            composable(
+                route = Screen.CreatePost.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
+                CreatePostScreen(
+                    groupId = groupId,
+                    onBackClick = { navController.popBackStack() },
+                    onPostCreated = {
+                        // Torna alla chat del gruppo dopo la creazione del post
+                        navController.navigate(Screen.GroupChat.createRoute(groupId)) {
+                            popUpTo(Screen.GroupChat.createRoute(groupId)) { inclusive = true }
+                        }
+                    }
+                )
+            }
             composable(Screen.Home.route) {
                 // Otteniamo il nome dell'utente dal SessionManager
                 val userName = sessionManager.getFirstName().ifEmpty {
@@ -108,15 +126,18 @@ fun TripTalesApp() {
                 )
             }
             composable(
-                route = Screen.GroupChat.route,
+                route = Screen.CreatePost.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
-                GroupChatScreen(
+                CreatePostScreen(
                     groupId = groupId,
                     onBackClick = { navController.popBackStack() },
-                    onInviteClick = { id ->
-                        navController.navigate(Screen.InviteToGroup.createRoute(id))
+                    onPostCreated = {
+                        // Torna alla chat del gruppo dopo la creazione del post
+                        navController.navigate(Screen.GroupChat.createRoute(groupId)) {
+                            popUpTo(Screen.GroupChat.createRoute(groupId)) { inclusive = true }
+                        }
                     }
                 )
             }

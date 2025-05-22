@@ -54,7 +54,10 @@ data class PostItem(
     val timestamp: String,
     val mediaUrl: String? = null,
     val likesCount: Int = 0,
-    val isMyPost: Boolean = false
+    val isMyPost: Boolean = false,
+    val userHasLiked: Boolean = false, // NUOVO
+    val latitude: Double? = null, // NUOVO
+    val longitude: Double? = null // NUOVO
 )
 
 data class StatItem(
@@ -73,7 +76,7 @@ data class PlaceItem(
 
 // Componente PostCard esterno
 @Composable
-fun PostCard(post: PostItem, modifier: Modifier = Modifier) {
+fun PostCard(post: PostItem, modifier: Modifier = Modifier, onLocationClick: ((Double, Double) -> Unit)? = null) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
@@ -150,21 +153,33 @@ fun PostCard(post: PostItem, modifier: Modifier = Modifier) {
                         )
                     }
 
+                    // NUOVO: Mostra posizione se disponibile
                     if (post.location.isNotBlank()) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(top = 2.dp)
+                                .clickable {
+                                    // Se abbiamo le coordinate, chiama il callback
+                                    post.latitude?.let { lat ->
+                                        post.longitude?.let { lng ->
+                                            onLocationClick?.invoke(lat, lng)
+                                        }
+                                    }
+                                }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.LocationOn,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp),
-                                tint = Color.Gray
+                                tint = Color(0xFF5AC8FA)
                             )
                             Text(
                                 text = post.location,
                                 fontSize = 12.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(start = 2.dp)
+                                color = Color(0xFF5AC8FA),
+                                modifier = Modifier.padding(start = 2.dp),
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
@@ -228,7 +243,7 @@ fun PostCard(post: PostItem, modifier: Modifier = Modifier) {
                     Icon(
                         imageVector = Icons.Default.Favorite,
                         contentDescription = "Mi piace",
-                        tint = Color(0xFFFF4081)
+                        tint = if (post.userHasLiked) Color(0xFFFF4081) else Color.Gray
                     )
                 }
 
@@ -248,6 +263,20 @@ fun PostCard(post: PostItem, modifier: Modifier = Modifier) {
                         imageVector = Icons.Default.Comment,
                         contentDescription = "Commenta"
                     )
+                }
+
+                // NUOVO: Pulsante mappa se c'è una posizione
+                if (post.location.isNotBlank() && post.latitude != null && post.longitude != null) {
+                    IconButton(
+                        onClick = { onLocationClick?.invoke(post.latitude!!, post.longitude!!) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Map,
+                            contentDescription = "Mostra sulla mappa",
+                            tint = Color(0xFF5AC8FA)
+                        )
+                    }
                 }
 
                 IconButton(
@@ -562,7 +591,9 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel(),
     onProfileClick: () -> Unit = {},
     onAIAssistantClick: () -> Unit = {},
-    onPostClick: (String) -> Unit = {}
+    onPostClick: (String) -> Unit = {},
+    onCreatePostClick: () -> Unit = {}, // NUOVO parametro
+    onShowLocationOnMap: (Double, Double) -> Unit = { _, _ -> } // NUOVO parametro
 ) {
     // Stati dal ViewModel
     val weatherData by viewModel.weatherData.collectAsState()
@@ -1096,7 +1127,10 @@ fun HomeScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
-                                .clickable { onPostClick(post.id) }
+                                .clickable { onPostClick(post.id) },
+                            onLocationClick = { lat, lng ->
+                                onShowLocationOnMap(lat, lng)
+                            }
                         )
                     }
                 }
@@ -1146,13 +1180,14 @@ fun HomeScreen(
                     visible = isPostsLoaded,
                     enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        // Pulsante principale per creare post
                         FloatingActionButton(
-                            onClick = { /* Implementazione creazione nuovo post */ },
-                            modifier = Modifier.padding(vertical = 24.dp),
+                            onClick = onCreatePostClick,
+                            modifier = Modifier.padding(vertical = 16.dp),
                             containerColor = Color(0xFF5AC8FA)
                         ) {
                             Icon(
@@ -1161,6 +1196,13 @@ fun HomeScreen(
                                 tint = Color.White
                             )
                         }
+
+                        Text(
+                            "Condividi la tua avventura",
+                            fontSize = 14.sp,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(bottom = 24.dp)
+                        )
                     }
                 }
             }

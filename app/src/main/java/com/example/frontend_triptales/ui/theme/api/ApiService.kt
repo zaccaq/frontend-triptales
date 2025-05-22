@@ -17,8 +17,8 @@ import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.POST
 import retrofit2.http.GET
-import retrofit2.http.Header
 import retrofit2.http.Multipart
+import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -221,6 +221,31 @@ data class MapPostDTO(
     val user_has_liked: Boolean
 )
 
+data class CreatePostRequest(
+    val group: String,
+    val title: String,
+    val content: String,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val location_name: String? = null
+)
+
+data class PostResponse(
+    val id: Int,
+    val group: Int,
+    val author: UserDTO,
+    val title: String,
+    val content: String,
+    val created_at: String,
+    val latitude: Double?,
+    val longitude: Double?,
+    val location_name: String?,
+    val media: List<PostMediaDTO>?,
+    val likes_count: Int,
+    val user_has_liked: Boolean,
+    val is_chat_message: Boolean
+)
+
 
 interface OpenWeatherMapApi {
     @GET("data/2.5/weather")
@@ -271,10 +296,6 @@ interface TripTalesApi {
 
     @GET("api/trip-groups/{id}/members/")
     suspend fun getGroupMembers(@Path("id") groupId: String): Response<List<GroupMembershipDTO>>
-
-    // Aggiungi questo all'interfaccia TripTalesApi in ApiService.kt
-    @GET("api/trip-groups/{id}/posts/")
-    suspend fun getGroupPosts(@Path("id") groupId: String): Response<List<MessageDTO>>
 
     @FormUrlEncoded
     @POST("api/trip-groups/{id}/send_message/")
@@ -344,6 +365,58 @@ interface TripTalesApi {
 
     @DELETE("api/diary-posts/{id}/like/")
     suspend fun unlikePost(@Path("id") postId: Int): Response<Any>
+
+    @POST("api/diary-posts/")
+    suspend fun createPost(@Body request: CreatePostRequest): Response<PostResponse>
+
+    @GET("api/diary-posts/{id}/")
+    suspend fun getPost(@Path("id") postId: String): Response<PostResponse>
+
+    @PUT("api/diary-posts/{id}/")
+    suspend fun updatePost(
+        @Path("id") postId: String,
+        @Body request: CreatePostRequest
+    ): Response<PostResponse>
+
+    @DELETE("api/diary-posts/{id}/")
+    suspend fun deletePost(@Path("id") postId: String): Response<Unit>
+
+    // Like/Unlike post
+    @POST("api/diary-posts/{id}/like/")
+    suspend fun likePost(@Path("id") postId: String): Response<Unit>
+
+    @DELETE("api/diary-posts/{id}/like/")
+    suspend fun unlikePost(@Path("id") postId: String): Response<Unit>
+
+    // Caricamento media con più opzioni
+    @Multipart
+    @POST("api/post-media/upload_media/")
+    suspend fun uploadMedia(
+        @Part("post_id") postId: RequestBody,
+        @Part media: MultipartBody.Part,
+        @Part("media_type") mediaType: RequestBody? = null,
+        @Part("latitude") latitude: RequestBody? = null,
+        @Part("longitude") longitude: RequestBody? = null,
+        @Part("detected_objects") detectedObjects: RequestBody? = null,
+        @Part("ocr_text") ocrText: RequestBody? = null,
+        @Part("caption") caption: RequestBody? = null
+    ): Response<PostMediaDTO>
+
+    // Metodi per ottenere post di un gruppo (già esistente, ma verifichiamo la struttura)
+    @GET("api/trip-groups/{id}/posts/")
+    suspend fun getGroupPosts(@Path("id") groupId: String): Response<List<PostResponse>>
+
+    // Nuovo metodo per ottenere post nelle vicinanze
+    @GET("api/diary-posts/nearby/")
+    suspend fun getNearbyPosts(
+        @Query("latitude") latitude: Double,
+        @Query("longitude") longitude: Double,
+        @Query("radius") radius: Double = 10.0 // km
+    ): Response<List<PostResponse>>
+
+    // Metodo per ottenere tutti i post dell'utente
+    @GET("api/diary-posts/my-posts/")
+    suspend fun getMyPosts(): Response<List<PostResponse>>
 }
 
 object WeatherService {
@@ -392,7 +465,7 @@ object WeatherService {
 object ServizioApi {
     // URL per diversi ambienti
     private const val EMULATOR_URL = "http://10.0.2.2:8000/"
-    private const val LOCAL_DEVICE_URL = "https://564d-79-8-186-194.ngrok-free.app/"
+    private const val LOCAL_DEVICE_URL = "http://10.0.2.2:8000/"
     private const val PRODUCTION_URL = "https://api.triptales.example.com/"
 
     // Tempo di timeout per le richieste

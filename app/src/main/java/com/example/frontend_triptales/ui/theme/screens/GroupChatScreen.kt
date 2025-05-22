@@ -50,7 +50,7 @@ fun GroupChatScreen(
     groupId: String,
     onBackClick: () -> Unit,
     onInviteClick: (String) -> Unit,
-    onMapClick: (String) -> Unit = {} // Nuovo parametro
+    onCreatePostClick: (String) -> Unit // NUOVO parametro
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -255,6 +255,17 @@ fun GroupChatScreen(
                 }
             },
             actions = {
+                // NUOVO: Pulsante per creare un post
+                IconButton(
+                    onClick = { onCreatePostClick(groupId) }
+                ) {
+                    Icon(
+                        Icons.Default.AddPhotoAlternate,
+                        contentDescription = "Crea post",
+                        tint = Color(0xFF5AC8FA)
+                    )
+                }
+
                 // Pulsante per vedere i membri del gruppo
                 IconButton(
                     onClick = {

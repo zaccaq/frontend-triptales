@@ -30,4 +30,8 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     // In Screen.kt, aggiungi questa definizione
     object JoinGroup : Screen("join_group", "Unisciti", Icons.Default.GroupAdd)
     object AIAssistant : Screen("ai_assistant", "Assistente AI", Icons.Default.Assistant)
+    object CreatePost : Screen("create_post/{groupId}", "Nuovo Post", Icons.Default.Add) {
+        fun createRoute(groupId: String) = "create_post/$groupId"
+    }
+
 }
