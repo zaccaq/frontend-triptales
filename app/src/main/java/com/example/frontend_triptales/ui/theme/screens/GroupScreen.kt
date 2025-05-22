@@ -30,9 +30,16 @@ import java.util.*
 data class GroupItem(
     val id: String,
     val name: String,
-    val lastActivity: String,
-    val memberCount: Int
+    val description: String,
+    val memberCount: Int,
+    val startDate: String,
+    val endDate: String,
+    val location: String,
+    val createdAt: String,
+    val isPrivate: Boolean,
+    val lastActivity: String
 )
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,12 +75,17 @@ fun GroupScreen(
 
                 if (response.isSuccessful && response.body() != null) {
                     groups = response.body()!!.map { group ->
-                        Log.d("GroupScreen", "Gruppo: ${group.name}, Membri: ${group.memberCount}")
                         GroupItem(
                             id = group.id.toString(),
                             name = group.name,
-                            lastActivity = formatLastActivity(group.lastActivityDate),
-                            memberCount = group.memberCount
+                            description = group.description,
+                            memberCount = group.member_count,
+                            startDate = group.start_date,
+                            endDate = group.end_date,
+                            location = group.location,
+                            createdAt = group.created_at,
+                            isPrivate = group.is_private,
+                            lastActivity = formatLastActivity(group.lastActivityDate)
                         )
                     }
                     Log.d("GroupScreen", "Caricati ${groups.size} gruppi")
@@ -176,7 +188,13 @@ fun GroupScreen(
                                                     id = group.id.toString(),
                                                     name = group.name,
                                                     lastActivity = formatLastActivity(group.lastActivityDate),
-                                                    memberCount = group.memberCount
+                                                    memberCount = group.memberCount,
+                                                    description = TODO(),
+                                                    startDate = TODO(),
+                                                    endDate = TODO(),
+                                                    location = TODO(),
+                                                    createdAt = TODO(),
+                                                    isPrivate = TODO()
                                                 )
                                             }
                                         }
