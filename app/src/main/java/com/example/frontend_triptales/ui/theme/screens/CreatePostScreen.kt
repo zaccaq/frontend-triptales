@@ -26,13 +26,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.frontend_triptales.api.ServizioApi
-import com.example.frontend_triptales.api.CreatePostRequest  // Usa quella dal pacchetto api
+import com.example.frontend_triptales.api.CreatePostRequest
 import com.example.frontend_triptales.ui.theme.services.LocationData
 import com.example.frontend_triptales.ui.theme.services.LocationManager
+import com.example.frontend_triptales.ui.theme.mlkit.MLKitResult
+import com.example.frontend_triptales.ui.theme.mlkit.MLKitService
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -66,12 +69,50 @@ fun CreatePostScreen(
     var selectedImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var imageUri by remember { mutableStateOf<Uri?>(null) }
 
+    // Stati per ML Kit
+    var mlResults by remember { mutableStateOf<Map<Uri, MLKitResult>>(emptyMap()) }
+    var isProcessingML by remember { mutableStateOf(false) }
+    var showMLResults by remember { mutableStateOf(false) }
+
+    fun processImageWithMLKit(uri: Uri) {
+        coroutineScope.launch {
+            try {
+                isProcessingML = true
+                Log.d("CreatePost", "Inizio processamento ML Kit per $uri")
+
+                val inputImage = MLKitService.createInputImageFromUri(context, uri)
+                if (inputImage != null) {
+                    val result = MLKitService.processImage(inputImage)
+                    mlResults = mlResults + (uri to result)
+
+                    // Auto-aggiungi la caption se generata e il contenuto è vuoto
+                    if (result.generatedCaption.isNotEmpty() && content.isBlank()) {
+                        content = result.generatedCaption
+                    }
+
+                    Log.d("CreatePost", "ML Kit processing completato per $uri")
+                    Toast.makeText(context, "Analisi AI completata!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Log.e("CreatePost", "Impossibile creare InputImage da $uri")
+                    Toast.makeText(context, "Errore nell'analisi dell'immagine", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("CreatePost", "Errore ML Kit", e)
+                Toast.makeText(context, "Errore nell'analisi AI: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                isProcessingML = false
+            }
+        }
+    }
+
     // Launcher per fotocamera
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && imageUri != null) {
             selectedImages = selectedImages + imageUri!!
+            // Processa automaticamente con ML Kit
+            processImageWithMLKit(imageUri!!)
         }
     }
 
@@ -80,6 +121,8 @@ fun CreatePostScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         selectedImages = selectedImages + uris
+        // Processa automaticamente tutte le nuove immagini con ML Kit
+        uris.forEach { uri -> processImageWithMLKit(uri) }
     }
 
     // Funzione per creare URI per fotocamera
@@ -125,7 +168,6 @@ fun CreatePostScreen(
                     }
                 },
                 actions = {
-                    // Pulsante per pubblicare
                     TextButton(
                         onClick = {
                             if (title.isBlank()) {
@@ -140,7 +182,7 @@ fun CreatePostScreen(
 
                                     val api = ServizioApi.getAuthenticatedClient(context)
 
-                                    // 1. Crea il post usando la classe dal pacchetto api
+                                    // 1. Crea il post
                                     val postRequest = CreatePostRequest(
                                         group = groupId,
                                         title = title,
@@ -150,7 +192,6 @@ fun CreatePostScreen(
                                         location_name = if (useCurrentLocation) currentLocation?.placeName else null
                                     )
 
-                                    // Converti in JSON e invia
                                     val response = api.createPost(postRequest)
 
                                     if (response.isSuccessful && response.body() != null) {
@@ -159,7 +200,13 @@ fun CreatePostScreen(
 
                                         // 2. Carica le immagini se presenti
                                         if (selectedImages.isNotEmpty()) {
-                                            uploadImages(context, createdPost.id.toString(), selectedImages, currentLocation)
+                                            uploadImagesWithMLData(
+                                                context,
+                                                createdPost.id.toString(),
+                                                selectedImages,
+                                                mlResults,
+                                                currentLocation
+                                            )
                                         }
 
                                         Toast.makeText(context, "Post pubblicato con successo!", Toast.LENGTH_SHORT).show()
@@ -259,12 +306,15 @@ fun CreatePostScreen(
                 )
             }
 
-            // Sezione immagini
+            // Sezione immagini con ML Kit
             item {
-                ImageSection(
+                EnhancedImageSection(
                     selectedImages = selectedImages,
+                    mlResults = mlResults,
+                    isProcessingML = isProcessingML,
                     onRemoveImage = { uri ->
                         selectedImages = selectedImages.filter { it != uri }
+                        mlResults = mlResults - uri
                     },
                     onTakePhoto = {
                         val uri = createImageUri()
@@ -273,7 +323,9 @@ fun CreatePostScreen(
                     },
                     onSelectFromGallery = {
                         galleryLauncher.launch("image/*")
-                    }
+                    },
+                    onProcessML = { uri -> processImageWithMLKit(uri) },
+                    onShowMLResults = { showMLResults = true }
                 )
             }
 
@@ -299,6 +351,18 @@ fun CreatePostScreen(
                 Spacer(modifier = Modifier.height(32.dp))
             }
         }
+    }
+
+    // Dialog per mostrare risultati ML Kit
+    if (showMLResults) {
+        MLResultsDialog(
+            results = mlResults,
+            onDismiss = { showMLResults = false },
+            onApplyCaption = { caption ->
+                content = caption
+                showMLResults = false
+            }
+        )
     }
 }
 
@@ -357,79 +421,83 @@ fun LocationSection(
             if (useCurrentLocation) {
                 Spacer(modifier = Modifier.height(12.dp))
 
-                if (isLoadingLocation) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = Color(0xFF5AC8FA)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Rilevamento posizione...", color = Color.Gray)
-                    }
-                } else if (locationError != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                when {
+                    isLoadingLocation -> {
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.Error,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(16.dp)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color(0xFF5AC8FA)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                locationError,
-                                color = MaterialTheme.colorScheme.error,
-                                fontSize = 12.sp
-                            )
-                        }
-                        IconButton(
-                            onClick = onRefreshLocation,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Riprova",
-                                tint = Color(0xFF5AC8FA),
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Rilevamento posizione...", color = Color.Gray)
                         }
                     }
-                } else if (currentLocation != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                currentLocation.placeName,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                "Lat: ${String.format("%.4f", currentLocation.latitude)}, " +
-                                        "Lon: ${String.format("%.4f", currentLocation.longitude)}",
-                                fontSize = 12.sp,
-                                color = Color.Gray
-                            )
-                        }
-                        IconButton(
-                            onClick = onRefreshLocation,
-                            modifier = Modifier.size(32.dp)
+                    locationError != null -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Aggiorna posizione",
-                                tint = Color(0xFF5AC8FA),
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Error,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    locationError,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            IconButton(
+                                onClick = onRefreshLocation,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Riprova",
+                                    tint = Color(0xFF5AC8FA),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                    currentLocation != null -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    currentLocation.placeName,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    "Lat: ${String.format("%.4f", currentLocation.latitude)}, " +
+                                            "Lon: ${String.format("%.4f", currentLocation.longitude)}",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            IconButton(
+                                onClick = onRefreshLocation,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Aggiorna posizione",
+                                    tint = Color(0xFF5AC8FA),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -439,11 +507,15 @@ fun LocationSection(
 }
 
 @Composable
-fun ImageSection(
+fun EnhancedImageSection(
     selectedImages: List<Uri>,
+    mlResults: Map<Uri, MLKitResult>,
+    isProcessingML: Boolean,
     onRemoveImage: (Uri) -> Unit,
     onTakePhoto: () -> Unit,
-    onSelectFromGallery: () -> Unit
+    onSelectFromGallery: () -> Unit,
+    onProcessML: (Uri) -> Unit,
+    onShowMLResults: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -458,20 +530,61 @@ fun ImageSection(
                 .padding(16.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    Icons.Default.PhotoCamera,
-                    contentDescription = null,
-                    tint = Color(0xFF5AC8FA),
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "Foto (${selectedImages.size})",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.PhotoCamera,
+                        contentDescription = null,
+                        tint = Color(0xFF5AC8FA),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Foto con AI (${selectedImages.size})",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+
+                if (mlResults.isNotEmpty()) {
+                    Row {
+                        Text(
+                            "${mlResults.size} analizzate",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = onShowMLResults,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Psychology,
+                                contentDescription = "Risultati AI",
+                                tint = Color(0xFF5AC8FA),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Indicatore processing ML Kit
+            if (isProcessingML) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color(0xFF5AC8FA)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Analisi AI in corso...", fontSize = 14.sp)
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -481,7 +594,6 @@ fun ImageSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Pulsante fotocamera
                 OutlinedButton(
                     onClick = onTakePhoto,
                     modifier = Modifier.weight(1f),
@@ -494,7 +606,6 @@ fun ImageSection(
                     Text("Fotocamera")
                 }
 
-                // Pulsante galleria
                 OutlinedButton(
                     onClick = onSelectFromGallery,
                     modifier = Modifier.weight(1f),
@@ -508,7 +619,7 @@ fun ImageSection(
                 }
             }
 
-            // Griglia delle immagini selezionate
+            // Griglia immagini con analisi ML
             if (selectedImages.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -516,35 +627,151 @@ fun ImageSection(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(selectedImages) { uri ->
-                        Box {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(uri)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(80.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                            )
+                        ImageWithMLKit(
+                            uri = uri,
+                            mlResult = mlResults[uri],
+                            onRemove = { onRemoveImage(uri) },
+                            onProcessML = { onProcessML(uri) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
-                            // Pulsante per rimuovere
-                            IconButton(
-                                onClick = { onRemoveImage(uri) },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Red.copy(alpha = 0.8f))
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Rimuovi",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
+@Composable
+fun ImageWithMLKit(
+    uri: Uri,
+    mlResult: MLKitResult?,
+    onRemove: () -> Unit,
+    onProcessML: () -> Unit
+) {
+    Box {
+        Column {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(uri)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            )
+
+            // Indicatori ML Kit
+            Row(
+                modifier = Modifier.width(80.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (mlResult != null) {
+                    // Mostra badge se ha risultati ML
+                    if (mlResult.detectedObjects.isNotEmpty()) {
+                        Icon(
+                            Icons.Default.Visibility,
+                            contentDescription = "Oggetti rilevati",
+                            tint = Color.Green,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                    }
+                    if (mlResult.extractedText.isNotEmpty()) {
+                        Icon(
+                            Icons.Default.TextFields,
+                            contentDescription = "Testo rilevato",
+                            tint = Color.Blue,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                    }
+                    if (mlResult.generatedCaption.isNotEmpty()) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = "Caption generata",
+                            tint = Color.Red,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                } else {
+                    // Pulsante per processare con ML Kit
+                    IconButton(
+                        onClick = onProcessML,
+                        modifier = Modifier.size(16.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Psychology,
+                            contentDescription = "Analizza con AI",
+                            tint = Color(0xFF5AC8FA),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Pulsante rimuovi
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(Color.Red.copy(alpha = 0.8f))
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Rimuovi",
+                tint = Color.White,
+                modifier = Modifier.size(12.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun MLResultsDialog(
+    results: Map<Uri, MLKitResult>,
+    onDismiss: () -> Unit,
+    onApplyCaption: (String) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 500.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Risultati Analisi AI",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Chiudi")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                LazyColumn {
+                    results.forEach { (_, result) ->
+                        item {
+                            MLResultItem(
+                                result = result,
+                                onApplyCaption = onApplyCaption
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
                 }
@@ -553,11 +780,155 @@ fun ImageSection(
     }
 }
 
-// Funzione helper per caricare immagini
-private suspend fun uploadImages(
+@Composable
+fun MLResultItem(
+    result: MLKitResult,
+    onApplyCaption: (String) -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFF0F7FF)
+        ),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            // Oggetti rilevati
+            if (result.detectedObjects.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Visibility,
+                        contentDescription = null,
+                        tint = Color.Green,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "Oggetti rilevati:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+                result.detectedObjects.forEach { obj ->
+                    Text(
+                        "• ${obj.label} (${(obj.confidence * 100).toInt()}%)",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(start = 20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Testo estratto
+            if (result.extractedText.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.TextFields,
+                        contentDescription = null,
+                        tint = Color.Blue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "Testo estratto:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+                Text(
+                    result.extractedText,
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 20.dp, top = 4.dp)
+                )
+
+                if (result.translatedText.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Translate,
+                            contentDescription = null,
+                            tint = Color.Magenta,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "Traduzione:",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                    Text(
+                        result.translatedText,
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(start = 20.dp, top = 4.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Caption generata
+            if (result.generatedCaption.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "Caption suggerita:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+                Text(
+                    result.generatedCaption,
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 20.dp, top = 4.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { onApplyCaption(result.generatedCaption) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF5AC8FA)
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Usa questa caption")
+                }
+            }
+        }
+    }
+}
+
+// Funzione helper per caricare immagini con dati ML Kit
+private suspend fun uploadImagesWithMLData(
     context: android.content.Context,
     postId: String,
     images: List<Uri>,
+    mlResults: Map<Uri, MLKitResult>,
     location: LocationData?
 ) {
     try {
@@ -582,21 +953,44 @@ private suspend fun uploadImages(
             val latitudePart = location?.latitude?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
             val longitudePart = location?.longitude?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
 
+            // Aggiungi dati ML Kit se disponibili
+            val mlResult = mlResults[uri]
+            val detectedObjectsPart = if (mlResult?.detectedObjects?.isNotEmpty() == true) {
+                // Converti la lista di oggetti in JSON string
+                val objectsJson = mlResult.detectedObjects.joinToString(",") {
+                    """{"label":"${it.label}","confidence":${it.confidence}}"""
+                }
+                "[$objectsJson]".toRequestBody("text/plain".toMediaTypeOrNull())
+            } else null
+
+            val ocrTextPart = mlResult?.extractedText?.takeIf { it.isNotEmpty() }
+                ?.toRequestBody("text/plain".toMediaTypeOrNull())
+
+            val captionPart = mlResult?.generatedCaption?.takeIf { it.isNotEmpty() }
+                ?.toRequestBody("text/plain".toMediaTypeOrNull())
+
             val response = api.uploadMedia(
                 postId = postIdPart,
                 media = imagePart,
                 latitude = latitudePart,
-                longitude = longitudePart
+                longitude = longitudePart,
+                detectedObjects = detectedObjectsPart,
+                ocrText = ocrTextPart,
+                caption = captionPart
             )
 
-            if (!response.isSuccessful) {
+            if (response.isSuccessful) {
+                Log.d("CreatePost", "Upload completato per $uri con dati ML Kit")
+            } else {
                 Log.e("CreatePost", "Errore nell'upload dell'immagine: ${response.code()}")
             }
 
             // Pulisci il file temporaneo
             file.delete()
         }
+
+        Log.d("CreatePost", "Upload di tutte le immagini completato")
     } catch (e: Exception) {
-        Log.e("CreatePost", "Errore nell'upload delle immagini", e)
+        Log.e("CreatePost", "Errore nell'upload delle immagini con ML Kit", e)
     }
 }

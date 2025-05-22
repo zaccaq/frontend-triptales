@@ -51,6 +51,18 @@ android {
 }
 
 dependencies {
+    implementation ("com.google.mlkit:text-recognition:16.0.0")
+    implementation ("com.google.mlkit:object-detection:17.0.1")
+    implementation ("com.google.mlkit:translate:17.0.2")
+    implementation ("com.google.mlkit:face-detection:16.1.6")
+    implementation ("com.google.mlkit:image-labeling:17.0.8")
+
+    // CameraX dependencies (se non già presenti)
+    implementation ("androidx.camera:camera-camera2:1.3.1")
+    implementation ("androidx.camera:camera-lifecycle:1.3.1")
+    implementation ("androidx.camera:camera-view:1.3.1")
+    implementation ("androidx.camera:camera-extensions:1.3.1")
+
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     implementation("androidx.compose.material:material-icons-extended:1.5.8")
     implementation(libs.androidx.core.ktx)
@@ -109,6 +121,7 @@ dependencies {
 
     // Gemini AI (esistenti)
     implementation("com.google.ai.client.generativeai:generativeai:0.1.2")
+    implementation(libs.vision.common)
 
     // Test dependencies
     testImplementation(libs.junit)
