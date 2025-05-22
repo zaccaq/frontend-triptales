@@ -30,11 +30,12 @@ fun TripTalesApp() {
                     Screen.Register.route,
                     Screen.CreateGroup.route,
                     Screen.CreatePost.route,
-                    "group_chat/",
-                    "create_post/", // Aggiungi anche questa
+                    "group_chat/{groupId}", // ✅ Corretto
+                    "create_post/{groupId}", // ✅ Corretto
+                    "group_map/{groupId}", // ✅ Aggiungi questo
                     Screen.InvitesList.route,
-                    "invite_to_group/",
-                    Screen.AIAssistant.route // Aggiungi qui la rotta dell'AI per nascondere la bottom bar
+                    "invite_to_group/{groupId}", // ✅ Corretto
+                    Screen.AIAssistant.route
                 )) {
                 NavigationBar {
                     bottomBarScreens.forEach { screen ->
@@ -62,46 +63,32 @@ fun TripTalesApp() {
             startDestination = Screen.Login.route,
             modifier = Modifier.padding(innerPadding)
         ) {
+            // ===== AUTH SCREENS =====
             composable(Screen.Login.route) {
                 LoginScreen(
                     onLoginSuccess = { navController.navigate(Screen.Home.route) },
                     onNavigateToRegister = { navController.navigate(Screen.Register.route) }
                 )
             }
+
             composable(Screen.Register.route) {
                 RegistrationScreen(
                     onRegistrationSuccess = { navController.navigate(Screen.Home.route) },
                     onNavigateToLogin = { navController.popBackStack() }
                 )
             }
-            composable(
-                route = Screen.CreatePost.route,
-                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
-                CreatePostScreen(
-                    groupId = groupId,
-                    onBackClick = { navController.popBackStack() },
-                    onPostCreated = {
-                        // Torna alla chat del gruppo dopo la creazione del post
-                        navController.navigate(Screen.GroupChat.createRoute(groupId)) {
-                            popUpTo(Screen.GroupChat.createRoute(groupId)) { inclusive = true }
-                        }
-                    }
-                )
-            }
+
+            // ===== MAIN SCREENS =====
             composable(Screen.Home.route) {
-                // Otteniamo il nome dell'utente dal SessionManager
                 val userName = sessionManager.getFirstName().ifEmpty {
                     sessionManager.getUsername() ?: "Utente"
                 }
-
                 HomeScreen(
                     onProfileClick = { navController.navigate(Screen.Profile.route) },
-                    // Aggiungi questo nuovo callback per l'assistente AI
                     onAIAssistantClick = { navController.navigate(Screen.AIAssistant.route) }
                 )
             }
+
             composable(Screen.Group.route) {
                 GroupScreen(
                     onCreateGroupClick = { navController.navigate(Screen.CreateGroup.route) },
@@ -114,7 +101,12 @@ fun TripTalesApp() {
                     }
                 )
             }
-            composable(Screen.Map.route) { MapScreen() }
+
+            composable(Screen.Map.route) {
+                MapScreen()
+            }
+
+            // ===== GROUP SCREENS =====
             composable(Screen.CreateGroup.route) {
                 CreateGroupScreen(
                     onBackClick = { navController.popBackStack() },
@@ -125,22 +117,39 @@ fun TripTalesApp() {
                     }
                 )
             }
-            composable(
-                route = Screen.CreatePost.route,
-                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
-                CreatePostScreen(
-                    groupId = groupId,
+
+            composable(Screen.JoinGroup.route) {
+                JoinGroupScreen(
                     onBackClick = { navController.popBackStack() },
-                    onPostCreated = {
-                        // Torna alla chat del gruppo dopo la creazione del post
+                    onGroupJoined = { groupId ->
                         navController.navigate(Screen.GroupChat.createRoute(groupId)) {
-                            popUpTo(Screen.GroupChat.createRoute(groupId)) { inclusive = true }
+                            popUpTo(Screen.Group.route)
                         }
                     }
                 )
             }
+
+            composable(
+                route = Screen.GroupChat.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
+                GroupChatScreen(
+                    groupId = groupId,
+                    onBackClick = { navController.popBackStack() },
+                    onInviteClick = { gId ->
+                        navController.navigate(Screen.InviteToGroup.createRoute(gId))
+                    },
+                    onCreatePostClick = { gId ->
+                        navController.navigate(Screen.CreatePost.createRoute(gId))
+                    },
+                    onMapClick = { gId ->
+                        navController.navigate(Screen.GroupMap.createRoute(gId))
+                    }
+                )
+            }
+
+            // ===== GROUP MAP SCREEN =====
             composable(
                 route = Screen.GroupMap.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
@@ -151,6 +160,51 @@ fun TripTalesApp() {
                     onBackClick = { navController.popBackStack() }
                 )
             }
+
+            // ===== POST SCREENS =====
+            composable(
+                route = Screen.CreatePost.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
+                CreatePostScreen(
+                    groupId = groupId,
+                    onBackClick = { navController.popBackStack() },
+                    onPostCreated = {
+                        navController.navigate(Screen.GroupChat.createRoute(groupId)) {
+                            popUpTo(Screen.GroupChat.createRoute(groupId)) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            // ===== INVITE SCREENS =====
+            composable(Screen.InvitesList.route) {
+                InvitesListScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onInviteAccepted = {
+                        navController.navigate(Screen.Group.route) {
+                            popUpTo(Screen.Group.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            composable(
+                route = Screen.InviteToGroup.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
+                GroupInviteScreen(
+                    groupId = groupId,
+                    onBackClick = { navController.popBackStack() },
+                    onInviteSent = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            // ===== PROFILE & LEADERBOARD =====
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onBackClick = { navController.popBackStack() },
@@ -175,48 +229,7 @@ fun TripTalesApp() {
                 )
             }
 
-            // Nuova rotta per la lista degli inviti
-            composable(Screen.InvitesList.route) {
-                InvitesListScreen(
-                    onBackClick = { navController.popBackStack() },
-                    onInviteAccepted = {
-                        // Aggiorna la schermata dei gruppi dopo l'accettazione
-                        navController.navigate(Screen.Group.route) {
-                            popUpTo(Screen.Group.route) { inclusive = true }
-                        }
-                    }
-                )
-            }
-
-            // Nuova rotta per invitare utenti a un gruppo specifico
-            composable(
-                route = Screen.InviteToGroup.route,
-                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val groupId = backStackEntry.arguments?.getString("groupId") ?: "unknown"
-                GroupInviteScreen(
-                    groupId = groupId,
-                    onBackClick = { navController.popBackStack() },
-                    onInviteSent = {
-                        // Torna alla schermata della chat di gruppo dopo l'invio
-                        navController.popBackStack()
-                    }
-                )
-            }
-            composable(Screen.JoinGroup.route) {
-                JoinGroupScreen(
-                    onBackClick = { navController.popBackStack() },
-                    onGroupJoined = { groupId ->
-                        // Naviga direttamente alla chat del gruppo dopo l'unione
-                        navController.navigate(Screen.GroupChat.createRoute(groupId)) {
-                            // Rimuovi la schermata di unione al gruppo dallo stack di navigazione
-                            popUpTo(Screen.Group.route)
-                        }
-                    }
-                )
-            }
-
-            // Nuova rotta per l'assistente AI
+            // ===== AI ASSISTANT =====
             composable(Screen.AIAssistant.route) {
                 AIAssistantScreen(
                     onBackClick = { navController.popBackStack() }

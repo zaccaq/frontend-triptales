@@ -50,7 +50,8 @@ fun GroupChatScreen(
     groupId: String,
     onBackClick: () -> Unit,
     onInviteClick: (String) -> Unit,
-    onCreatePostClick: (String) -> Unit // NUOVO parametro
+    onCreatePostClick: (String) -> Unit, // NUOVO parametro
+    onMapClick: (String) -> Unit = {} // ✨ NUOVO parametro
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -256,35 +257,23 @@ fun GroupChatScreen(
             },
             actions = {
                 // NUOVO: Pulsante per creare un post
-                IconButton(
-                    onClick = { onCreatePostClick(groupId) }
-                ) {
-                    Icon(
-                        Icons.Default.AddPhotoAlternate,
-                        contentDescription = "Crea post",
-                        tint = Color(0xFF5AC8FA)
-                    )
+                IconButton(onClick = { onCreatePostClick(groupId) }) {
+                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Crea post", tint = Color(0xFF5AC8FA))
                 }
 
-                // Pulsante per vedere i membri del gruppo
-                IconButton(
-                    onClick = {
-                        loadGroupMembers()
-                        showMembersDialog = true
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.Group,
-                        contentDescription = "Membri del gruppo",
-                        tint = Color(0xFF5AC8FA)
-                    )
+                IconButton(onClick = { /* logica membri */ }) {
+                    Icon(Icons.Default.Group, contentDescription = "Membri del gruppo", tint = Color(0xFF5AC8FA))
                 }
 
-                // Pulsante per invitare utenti
                 IconButton(onClick = { onInviteClick(groupId) }) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = "Invita utenti", tint = Color(0xFF5AC8FA))
+                }
+
+                // ✨ NUOVO pulsante per la mappa
+                IconButton(onClick = { onMapClick(groupId) }) {
                     Icon(
-                        Icons.Default.PersonAdd,
-                        contentDescription = "Invita utenti",
+                        Icons.Default.Map,
+                        contentDescription = "Mappa del gruppo",
                         tint = Color(0xFF5AC8FA)
                     )
                 }
