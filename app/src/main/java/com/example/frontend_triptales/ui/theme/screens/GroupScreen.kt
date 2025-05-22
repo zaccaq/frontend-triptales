@@ -30,13 +30,7 @@ import java.util.*
 data class GroupItem(
     val id: String,
     val name: String,
-    val description: String,
     val memberCount: Int,
-    val startDate: String,
-    val endDate: String,
-    val location: String,
-    val createdAt: String,
-    val isPrivate: Boolean,
     val lastActivity: String
 )
 
@@ -78,13 +72,7 @@ fun GroupScreen(
                         GroupItem(
                             id = group.id.toString(),
                             name = group.name,
-                            description = group.description,
                             memberCount = group.member_count,
-                            startDate = group.start_date,
-                            endDate = group.end_date,
-                            location = group.location,
-                            createdAt = group.created_at,
-                            isPrivate = group.is_private,
                             lastActivity = formatLastActivity(group.lastActivityDate)
                         )
                     }
@@ -188,13 +176,7 @@ fun GroupScreen(
                                                     id = group.id.toString(),
                                                     name = group.name,
                                                     lastActivity = formatLastActivity(group.lastActivityDate),
-                                                    memberCount = group.memberCount,
-                                                    description = TODO(),
-                                                    startDate = TODO(),
-                                                    endDate = TODO(),
-                                                    location = TODO(),
-                                                    createdAt = TODO(),
-                                                    isPrivate = TODO()
+                                                    memberCount = group.memberCount
                                                 )
                                             }
                                         }
