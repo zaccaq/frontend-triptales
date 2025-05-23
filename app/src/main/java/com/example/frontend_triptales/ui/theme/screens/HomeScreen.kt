@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -55,23 +54,15 @@ data class PostItem(
     val mediaUrl: String? = null,
     val likesCount: Int = 0,
     val isMyPost: Boolean = false,
-    val userHasLiked: Boolean = false, // NUOVO
-    val latitude: Double? = null, // NUOVO
-    val longitude: Double? = null // NUOVO
+    val userHasLiked: Boolean = false,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 data class StatItem(
     val label: String,
     val value: Int,
     val color: Color
-)
-
-data class PlaceItem(
-    val id: Int,
-    val name: String,
-    val imageUrl: String,
-    val distance: String,
-    val rating: Float
 )
 
 // Componente PostCard esterno
@@ -163,7 +154,7 @@ fun PostCard(
                         )
                     }
 
-                    // NUOVO: Mostra posizione se disponibile
+                    // Mostra posizione se disponibile
                     if (post.location.isNotBlank()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -246,7 +237,7 @@ fun PostCard(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Pulsante Like FUNZIONALE
+                // Pulsante Like
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -283,7 +274,7 @@ fun PostCard(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Pulsante Commenti FUNZIONALE
+                // Pulsante Commenti
                 IconButton(
                     onClick = { onCommentClick?.invoke(post.id) },
                     modifier = Modifier.size(36.dp)
@@ -401,113 +392,6 @@ fun StatCard(stat: StatItem, modifier: Modifier = Modifier, animDelay: Int = 0) 
     }
 }
 
-// PlaceCard Composable
-@Composable
-fun PlaceCard(place: PlaceItem) {
-    Card(
-        modifier = Modifier
-            .width(180.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column {
-            // Immagine del luogo
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp)
-            ) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(place.imageUrl)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = "Immagine di ${place.name}",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Gradiente scuro in basso
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.7f)
-                                ),
-                                startY = 50f
-                            )
-                        )
-                )
-
-                // Informazioni sul luogo
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = place.name,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = place.distance,
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(start = 2.dp)
-                        )
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            tint = Color(0xFFFFD700),
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = place.rating.toString(),
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(start = 2.dp)
-                        )
-                    }
-                }
-            }
-
-            // Pulsante per visitare
-            Button(
-                onClick = { /* Implementazione navigazione */ },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF5AC8FA)
-                )
-            ) {
-                Text("Visita", fontSize = 14.sp)
-            }
-        }
-    }
-}
-
 // Funzioni di utilità
 fun formatPostDate(dateString: String): String {
     try {
@@ -542,84 +426,6 @@ fun formatPostDate(dateString: String): String {
     }
 }
 
-private fun getDefaultNearbyPlaces(): List<PlaceItem> {
-    return listOf(
-        PlaceItem(
-            id = 1,
-            name = "Caricamento...",
-            imageUrl = "https://images.unsplash.com/photo-1516483638261-f4dbaf036963",
-            distance = "...",
-            rating = 4.5f
-        ),
-        PlaceItem(
-            id = 2,
-            name = "Caricamento...",
-            imageUrl = "https://images.unsplash.com/photo-1523906834658-6e24ef2386f9",
-            distance = "...",
-            rating = 4.3f
-        ),
-        PlaceItem(
-            id = 3,
-            name = "Caricamento...",
-            imageUrl = "https://images.unsplash.com/photo-1519502358834-4cf4bb3740e1",
-            distance = "...",
-            rating = 4.0f
-        )
-    )
-}
-
-private fun getNearbyPlaces(lat: Double, lon: Double, city: String, callback: (List<PlaceItem>) -> Unit) {
-    // Definisci luoghi per diverse città italiane
-    val placesByCity = mapOf(
-        "Roma" to listOf(
-            PlaceItem(1, "Colosseo", "https://images.unsplash.com/photo-1552832230-c0197dd311b5", "1.2 km", 4.9f),
-            PlaceItem(2, "Fontana di Trevi", "https://images.unsplash.com/photo-1525874684015-58379d421a52", "0.8 km", 4.8f),
-            PlaceItem(3, "Pantheon", "https://images.unsplash.com/photo-1552484604-541f2d423d46", "1.5 km", 4.7f)
-        ),
-        "Milano" to listOf(
-            PlaceItem(1, "Duomo di Milano", "https://images.unsplash.com/photo-1603788397410-5e108c93be53", "0.5 km", 4.9f),
-            PlaceItem(2, "Galleria Vittorio Emanuele", "https://images.unsplash.com/photo-1595870811635-1b043d4cf5ee", "0.7 km", 4.7f),
-            PlaceItem(3, "Castello Sforzesco", "https://images.unsplash.com/photo-1574411863833-5e85a998c55c", "1.8 km", 4.6f)
-        ),
-        "Venezia" to listOf(
-            PlaceItem(1, "Piazza San Marco", "https://images.unsplash.com/photo-1566019422381-1f89201e845a", "0.3 km", 4.9f),
-            PlaceItem(2, "Ponte di Rialto", "https://images.unsplash.com/photo-1580413787283-3a4bef61919d", "0.9 km", 4.8f),
-            PlaceItem(3, "Canal Grande", "https://images.unsplash.com/photo-1560426774-5cf70690a1e8", "0.5 km", 4.7f)
-        )
-    )
-
-    // Trova la città più vicina
-    val matchedCity = placesByCity.keys.find {
-        city.contains(it, ignoreCase = true) || it.contains(city, ignoreCase = true)
-    }
-
-    if (matchedCity != null && placesByCity.containsKey(matchedCity)) {
-        callback(placesByCity[matchedCity]!!)
-        return
-    }
-
-    // Genera luoghi dinamici se non trova corrispondenze
-    val placeNames = listOf("Piazza $city", "Parco Comunale", "Museo Civico", "Ponte $city")
-    val distances = listOf("0.3 km", "0.7 km", "1.2 km", "0.8 km")
-    val placeImages = listOf(
-        "https://images.unsplash.com/photo-1519502358834-4cf4bb3740e1",
-        "https://images.unsplash.com/photo-1577334928618-652def2c98ad",
-        "https://images.unsplash.com/photo-1580414057403-c5f451f30e1c"
-    )
-
-    val dynamicPlaces = List(3) { idx ->
-        PlaceItem(
-            id = idx + 1,
-            name = placeNames[idx % placeNames.size].replace("$city", city),
-            imageUrl = placeImages[idx % placeImages.size],
-            distance = distances[idx % distances.size],
-            rating = 4.0f + (idx * 0.3f).coerceAtMost(1.0f)
-        )
-    }
-
-    callback(dynamicPlaces)
-}
-
 // HomeScreen principale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -628,9 +434,8 @@ fun HomeScreen(
     onProfileClick: () -> Unit = {},
     onAIAssistantClick: () -> Unit = {},
     onPostClick: (String) -> Unit = {},
-    onCreatePostClick: () -> Unit = {}, // NUOVO parametro
-    onShowLocationOnMap: (Double, Double) -> Unit = { _, _ -> }, // NUOVO parametro
-    onNavigateToComments: (String, String) -> Unit = { _, _ -> } // NUOVO parametro per navigazione
+    onShowLocationOnMap: (Double, Double) -> Unit = { _, _ -> },
+    onNavigateToComments: (String, String) -> Unit = { _, _ -> }
 ) {
     // Stati dal ViewModel
     val weatherData by viewModel.weatherData.collectAsState()
@@ -646,10 +451,6 @@ fun HomeScreen(
     // Stati per le animazioni
     var isWeatherLoaded by remember { mutableStateOf(false) }
     var isPostsLoaded by remember { mutableStateOf(false) }
-    var isSuggestionsLoaded by remember { mutableStateOf(false) }
-
-    // Stati per luoghi vicini
-    var nearbyPlaces by remember { mutableStateOf<List<PlaceItem>>(emptyList()) }
 
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -682,9 +483,6 @@ fun HomeScreen(
                             post
                         }
                     }
-
-                    // Mostra feedback
-                    // Toast o Snackbar con result.message
                 } else {
                     Log.e("HomeScreen", "Errore like: ${response.code()}")
                 }
@@ -716,7 +514,6 @@ fun HomeScreen(
                 isPostsLoading = true
                 postsError = null
 
-                // Utilizza il client API autenticato
                 val api = ServizioApi.getAuthenticatedClient(context)
 
                 // Ottieni i gruppi dell'utente
@@ -729,14 +526,12 @@ fun HomeScreen(
                 val groups = groupsResponse.body() ?: emptyList()
                 val allPosts = mutableListOf<PostItem>()
 
-                // Per ogni gruppo, ottieni i post più recenti (inclusi quelli di altri utenti)
+                // Per ogni gruppo, ottieni i post più recenti
                 for (group in groups) {
                     try {
-                        // Utilizza il metodo posts disponibile dall'API
                         val postsResponse = api.getGroupPosts(group.id.toString())
 
                         if (postsResponse.isSuccessful && postsResponse.body() != null) {
-                            // Converti i post dal formato API al formato UI
                             postsResponse.body()?.forEach { post ->
                                 // Filtra solo i post normali, non i messaggi chat
                                 if (!post.is_chat_message) {
@@ -747,11 +542,14 @@ fun HomeScreen(
                                             userAvatar = post.author.profile_picture,
                                             groupName = group.name,
                                             content = post.content,
-                                            location = "", // Lascia vuoto se non disponibile
+                                            location = post.location_name ?: "",
                                             timestamp = formatPostDate(post.created_at),
                                             mediaUrl = post.media?.firstOrNull()?.media_url,
-                                            likesCount = 0, // Valore di default se non disponibile
-                                            isMyPost = post.author.id.toString() == sessionManager.getUserId()
+                                            likesCount = post.likes_count,
+                                            isMyPost = post.author.id.toString() == sessionManager.getUserId(),
+                                            userHasLiked = post.user_has_liked,
+                                            latitude = post.latitude,
+                                            longitude = post.longitude
                                         )
                                     )
                                 }
@@ -778,21 +576,10 @@ fun HomeScreen(
             isWeatherLoaded = true
             kotlinx.coroutines.delay(200)
             isPostsLoaded = true
-            kotlinx.coroutines.delay(200)
-            isSuggestionsLoaded = true
         }
     }
 
-    // Aggiorna i luoghi vicini quando otteniamo la posizione
-    LaunchedEffect(locationData) {
-        locationData?.let { location ->
-            getNearbyPlaces(location.latitude, location.longitude, location.placeName) { places ->
-                nearbyPlaces = places
-            }
-        }
-    }
-
-    // Statistiche dell'utente (da aggiornare con dati reali)
+    // Statistiche dell'utente
     val stats = remember(userPosts) {
         listOf(
             StatItem("Post", userPosts.size, Color(0xFF5AC8FA)),
@@ -919,7 +706,7 @@ fun HomeScreen(
                     AnimatedVisibility(
                         visible = isWeatherLoaded,
                         enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
-                    ) {// Continuazione della scheda meteo
+                    ) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1189,77 +976,6 @@ fun HomeScreen(
                             },
                             onLikeClick = { postId -> handleLikePost(postId) },
                             onCommentClick = { postId -> handleShowComments(postId) }
-                        )
-                    }
-                }
-            }
-
-            // Intestazione luoghi vicini
-            item {
-                AnimatedVisibility(
-                    visible = isSuggestionsLoaded,
-                    enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
-                ) {
-                    Text(
-                        text = "Da non perdere vicino a te",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 12.dp)
-                    )
-                }
-            }
-
-            // Luoghi vicini (orizzontale)
-            item {
-                AnimatedVisibility(
-                    visible = isSuggestionsLoaded,
-                    enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
-                ) {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (nearbyPlaces.isEmpty()) {
-                            items(getDefaultNearbyPlaces()) { place ->
-                                PlaceCard(place = place)
-                            }
-                        } else {
-                            items(nearbyPlaces) { place ->
-                                PlaceCard(place = place)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Bottone di creazione nuovo post
-            item {
-                AnimatedVisibility(
-                    visible = isPostsLoaded,
-                    enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Pulsante principale per creare post
-                        FloatingActionButton(
-                            onClick = onCreatePostClick,
-                            modifier = Modifier.padding(vertical = 16.dp),
-                            containerColor = Color(0xFF5AC8FA)
-                        ) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = "Crea nuovo post",
-                                tint = Color.White
-                            )
-                        }
-
-                        Text(
-                            "Condividi la tua avventura",
-                            fontSize = 14.sp,
-                            color = Color.Gray,
-                            modifier = Modifier.padding(bottom = 24.dp)
                         )
                     }
                 }
