@@ -50,6 +50,7 @@ data class PostItem(
     val id: String,
     val userName: String,
     val userAvatar: String? = null,
+    val groupId: String, // AGGIUNTO: ID del gruppo
     val groupName: String,
     val content: String,
     val location: String = "",
@@ -93,7 +94,7 @@ data class FilterOptions(
 fun PostCard(
     post: PostItem,
     modifier: Modifier = Modifier,
-    onLocationClick: ((Double, Double) -> Unit)? = null,
+    onLocationClick: ((Double, Double, String) -> Unit)? = null, // AGGIUNTO String per groupId
     onLikeClick: ((String) -> Unit)? = null,
     onCommentClick: ((String) -> Unit)? = null
 ) {
@@ -178,16 +179,19 @@ fun PostCard(
                     }
 
                     // Mostra posizione se disponibile
+                    // Sostituisci il blocco che mostra la posizione con questo:
+
+                    // Mostra posizione se disponibile
                     if (post.location.isNotBlank()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .padding(top = 2.dp)
                                 .clickable {
-                                    // Se abbiamo le coordinate, chiama il callback
+                                    // Se abbiamo le coordinate, chiama il callback con groupId
                                     post.latitude?.let { lat ->
                                         post.longitude?.let { lng ->
-                                            onLocationClick?.invoke(lat, lng)
+                                            onLocationClick?.invoke(lat, lng, post.groupId) // AGGIUNTO post.groupId
                                         }
                                     }
                                 }
@@ -312,7 +316,9 @@ fun PostCard(
                 // Pulsante mappa se c'è una posizione
                 if (post.location.isNotBlank() && post.latitude != null && post.longitude != null) {
                     IconButton(
-                        onClick = { onLocationClick?.invoke(post.latitude, post.longitude) },
+                        onClick = {
+                            onLocationClick?.invoke(post.latitude, post.longitude, post.groupId) // AGGIUNTO groupId
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
@@ -447,7 +453,7 @@ fun HomeScreen(
     onProfileClick: () -> Unit = {},
     onAIAssistantClick: () -> Unit = {},
     onPostClick: (String) -> Unit = {},
-    onShowLocationOnMap: (Double, Double) -> Unit = { _, _ -> },
+    onNavigateToGroupMap: (String) -> Unit = {}, // AGGIUNTO
     onNavigateToComments: (String, String) -> Unit = { _, _ -> }
 ) {
     // Stati dal ViewModel
@@ -578,6 +584,7 @@ fun HomeScreen(
                                             id = post.id.toString(),
                                             userName = post.author.username,
                                             userAvatar = post.author.profile_picture,
+                                            groupId = group.id.toString(), // AGGIUNTO
                                             groupName = group.name,
                                             content = post.content,
                                             location = post.location_name ?: "",
@@ -597,7 +604,6 @@ fun HomeScreen(
                         Log.e("HomeScreen", "Errore nel caricamento dei post per il gruppo ${group.id}: ${e.message}")
                     }
                 }
-
                 // Ordina i post per data (i più recenti prima)
                 userPosts = allPosts.sortedByDescending { it.timestamp }
             } catch (e: Exception) {
@@ -1058,8 +1064,9 @@ fun HomeScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                                 .clickable { onPostClick(post.id) },
-                            onLocationClick = { lat, lng ->
-                                onShowLocationOnMap(lat, lng)
+                            onLocationClick = { lat, lng, groupId ->
+                                // Ora abbiamo il groupId, possiamo navigare alla mappa del gruppo
+                                onNavigateToGroupMap(groupId)
                             },
                             onLikeClick = { postId -> handleLikePost(postId) },
                             onCommentClick = { postId -> handleShowComments(postId) }

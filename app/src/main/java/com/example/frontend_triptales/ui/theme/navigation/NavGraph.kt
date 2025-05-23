@@ -86,6 +86,9 @@ fun TripTalesApp() {
                 HomeScreen(
                     onProfileClick = { navController.navigate(Screen.Profile.route) },
                     onAIAssistantClick = { navController.navigate(Screen.AIAssistant.route) },
+                    onNavigateToGroupMap = { groupId -> // AGGIUNTO
+                        navController.navigate(Screen.GroupMap.createRoute(groupId))
+                    },
                     onNavigateToComments = { postId, postTitle ->
                         navController.navigate(Screen.Comments.createRoute(postId, postTitle))
                     }
@@ -148,6 +151,9 @@ fun TripTalesApp() {
                     },
                     onMapClick = { gId ->
                         navController.navigate(Screen.GroupMap.createRoute(gId))
+                    },
+                    onNavigateToComments = { postId, postTitle -> // AGGIUNTO
+                        navController.navigate(Screen.Comments.createRoute(postId, postTitle))
                     }
                 )
             }

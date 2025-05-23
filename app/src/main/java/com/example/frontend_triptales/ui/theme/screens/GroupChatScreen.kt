@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,6 +27,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -33,11 +35,10 @@ import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.example.frontend_triptales.api.GroupMembershipDTO
-import com.example.frontend_triptales.api.ServizioApi
-import com.example.frontend_triptales.api.UserDTO
+import com.example.frontend_triptales.api.*
 import com.example.frontend_triptales.auth.SessionManager
 import com.example.frontend_triptales.ui.theme.chat.ChatService
+import com.example.frontend_triptales.ui.theme.utils.DateUtils
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
@@ -51,48 +52,215 @@ fun GroupChatScreen(
     onBackClick: () -> Unit,
     onInviteClick: (String) -> Unit,
     onCreatePostClick: (String) -> Unit,
-    onMapClick: (String) -> Unit = {}
+    onMapClick: (String) -> Unit = {},
+    onShowLocationOnMap: (Double, Double) -> Unit = { _, _ -> },
+    onNavigateToComments: (String, String) -> Unit = { _, _ -> } // AGGIUNTO
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
-    val chatService = remember { ChatService(sessionManager, context) }
     val coroutineScope = rememberCoroutineScope()
-    val scope = rememberCoroutineScope()
 
-    // Stato per i messaggi
-    val messagesList = remember { mutableStateListOf<ChatService.ChatMessage>() }
+    // Stati per i messaggi e post
+    var messages by remember { mutableStateOf<List<MessageDTO>>(emptyList()) }
+    var posts by remember { mutableStateOf<List<PostResponse>>(emptyList()) }
     var newMessage by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val imageUri = remember { mutableStateOf<Uri?>(null) }
 
-    // Stato per tenere traccia dell'invio
+    // Stati per l'interfaccia
+    var groupName by remember { mutableStateOf("Caricamento...") }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
     var isSending by remember { mutableStateOf(false) }
-    var sendError by remember { mutableStateOf<String?>(null) }
 
-    // Stato per il nome del gruppo
-    var groupName by remember { mutableStateOf("Gruppo $groupId") }
-
-    // Stato per dialog membri e lista membri
+    // Stati per membri del gruppo
     var showMembersDialog by remember { mutableStateOf(false) }
     var groupMembers by remember { mutableStateOf<List<GroupMembershipDTO>>(emptyList()) }
     var isLoadingMembers by remember { mutableStateOf(false) }
     var membersError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(groupId) {
+    // WebSocket - inizializza ma non bloccare l'UI se fallisce
+    val chatService = remember {
         try {
-            val api = ServizioApi.getAuthenticatedClient(context)
-            val response = api.getGroupDetails(groupId)
-
-            if (response.isSuccessful && response.body() != null) {
-                val group = response.body()!!
-                groupName = group.name
-            }
+            ChatService(sessionManager, context)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("GroupChat", "Errore inizializzazione ChatService: ${e.message}")
+            null
         }
     }
 
-    // Funzione per caricare i membri del gruppo
+    // Launcher per fotocamera
+    val imageUri = remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && imageUri.value != null) {
+            coroutineScope.launch {
+                try {
+                    chatService?.uploadAndSendImage(context, groupId, imageUri.value!!)
+                } catch (e: Exception) {
+                    Log.e("GroupChat", "Errore upload immagine: ${e.message}")
+                }
+            }
+        }
+    }
+
+    // Funzione per creare URI immagine
+    fun createImageUri(): Uri {
+        val file = File(context.cacheDir, "${System.currentTimeMillis()}.jpg")
+        return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    }
+
+    // Carica i dati del gruppo all'avvio
+    LaunchedEffect(groupId) {
+        coroutineScope.launch {
+            try {
+                isLoading = true
+                error = null
+
+                val api = ServizioApi.getAuthenticatedClient(context)
+                Log.d("GroupChat", "Caricamento dati per gruppo: $groupId")
+
+                // 1. Carica dettagli gruppo
+                val groupResponse = api.getGroupDetails(groupId)
+                if (groupResponse.isSuccessful && groupResponse.body() != null) {
+                    groupName = groupResponse.body()!!.name
+                    Log.d("GroupChat", "Nome gruppo: $groupName")
+                } else {
+                    Log.e("GroupChat", "Errore caricamento gruppo: ${groupResponse.code()}")
+                    error = "Gruppo non trovato"
+                    return@launch
+                }
+
+                // 2. Carica messaggi e post in parallelo
+                try {
+                    // Carica messaggi chat
+                    val messagesResponse = api.getGroupMessages(groupId)
+                    if (messagesResponse.isSuccessful && messagesResponse.body() != null) {
+                        messages = messagesResponse.body()!!.filter { it.is_chat_message }
+                        Log.d("GroupChat", "Caricati ${messages.size} messaggi")
+                    }
+
+                    // Carica post del gruppo
+                    val postsResponse = api.getGroupPosts(groupId)
+                    if (postsResponse.isSuccessful && postsResponse.body() != null) {
+                        posts = postsResponse.body()!!.filter { !it.is_chat_message }
+                        Log.d("GroupChat", "Caricati ${posts.size} post")
+                    }
+                } catch (e: Exception) {
+                    Log.e("GroupChat", "Errore caricamento contenuti: ${e.message}")
+                    // Non bloccare l'UI per questo errore
+                }
+
+            } catch (e: Exception) {
+                Log.e("GroupChat", "Errore generale: ${e.message}", e)
+                error = "Errore di connessione: ${e.message}"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    // Inizializza WebSocket (non bloccante)
+    LaunchedEffect(groupId) {
+        chatService?.let { service ->
+            try {
+                Log.d("GroupChat", "Tentativo connessione WebSocket...")
+                service.connectToChat(groupId)
+
+                // Raccolta messaggi in tempo reale
+                coroutineScope.launch {
+                    service.messages.collectLatest { newMsg ->
+                        Log.d("GroupChat", "Nuovo messaggio WebSocket: ${newMsg.content}")
+                        // Aggiungi alla lista se non già presente
+                        // (Implementazione più sofisticata se necessario)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("GroupChat", "WebSocket non disponibile: ${e.message}")
+                // Continua senza WebSocket
+            }
+        }
+    }
+
+    // Cleanup WebSocket
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                chatService?.disconnect()
+            } catch (e: Exception) {
+                Log.e("GroupChat", "Errore disconnect WebSocket: ${e.message}")
+            }
+        }
+    }
+
+    // Funzione per inviare messaggi
+    fun sendMessage() {
+        if (newMessage.isBlank() || isSending) return
+
+        coroutineScope.launch {
+            try {
+                isSending = true
+                val messageToSend = newMessage
+                newMessage = ""
+
+                val api = ServizioApi.getAuthenticatedClient(context)
+                val response = api.sendMessage(groupId, messageToSend)
+
+                if (response.isSuccessful && response.body() != null) {
+                    Log.d("GroupChat", "Messaggio inviato con successo")
+                    // Aggiungi il nuovo messaggio alla lista
+                    val newMsg = response.body()!!
+                    if (newMsg.is_chat_message) {
+                        messages = messages + newMsg
+                        listState.animateScrollToItem(messages.size - 1)
+                    }
+                } else {
+                    Log.e("GroupChat", "Errore invio messaggio: ${response.code()}")
+                    // Fallback a WebSocket se disponibile
+                    chatService?.sendTextMessage(messageToSend)
+                }
+
+            } catch (e: Exception) {
+                Log.e("GroupChat", "Errore invio: ${e.message}")
+                // Fallback a WebSocket se disponibile
+                try {
+                    chatService?.sendTextMessage(newMessage)
+                    newMessage = ""
+                } catch (wsError: Exception) {
+                    Log.e("GroupChat", "Anche WebSocket fallito: ${wsError.message}")
+                }
+            } finally {
+                isSending = false
+            }
+        }
+    }
+
+    // Funzione per gestire like sui post
+    fun handleLikePost(postId: String) {
+        coroutineScope.launch {
+            try {
+                val api = ServizioApi.getAuthenticatedClient(context)
+                val response = api.likePost(postId)
+
+                if (response.isSuccessful && response.body() != null) {
+                    val result = response.body()!!
+                    // Aggiorna la lista dei post
+                    posts = posts.map { post ->
+                        if (post.id.toString() == postId) {
+                            post.copy(
+                                likes_count = result.total_likes,
+                                user_has_liked = result.liked
+                            )
+                        } else post
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("GroupChat", "Errore like: ${e.message}")
+            }
+        }
+    }
+
+    // Funzione per caricare membri
     fun loadGroupMembers() {
         coroutineScope.launch {
             try {
@@ -105,127 +273,71 @@ fun GroupChatScreen(
                 if (response.isSuccessful && response.body() != null) {
                     groupMembers = response.body()!!
                 } else {
-                    membersError = "Errore nel caricamento dei membri: ${response.code()}"
+                    membersError = "Errore nel caricamento: ${response.code()}"
                 }
             } catch (e: Exception) {
-                Log.e("GroupChatScreen", "Errore caricamento membri: ${e.message}")
-                membersError = "Errore nel caricamento dei membri: ${e.message}"
+                membersError = "Errore: ${e.message}"
             } finally {
                 isLoadingMembers = false
             }
         }
     }
 
-    // Caricare i messaggi dal database all'inizio
-    LaunchedEffect(groupId) {
-        try {
-            val api = ServizioApi.getAuthenticatedClient(context)
-            val response = api.getGroupMessages(groupId)
-
-            if (response.isSuccessful && response.body() != null) {
-                val messages = response.body()!!
-                val currentUserId = sessionManager.getUserId()
-
-                // Converti i messaggi dal formato DTO
-                for (msg in messages) {
-                    if (msg.is_chat_message) {  // Filtra solo i messaggi chat
-                        val chatMsg = ChatService.ChatMessage(
-                            id = msg.id.toString(),
-                            senderId = msg.author.id.toString(),
-                            senderName = msg.author.username,
-                            content = msg.content,
-                            timestamp = msg.created_at,
-                            isCurrentUser = msg.author.id.toString() == currentUserId,
-                            imageUrl = msg.media?.firstOrNull()?.media_url
-                        )
-                        messagesList.add(chatMsg)
-                    }
-                }
-
-                // Scroll alla fine dopo aver caricato i messaggi
-                if (messagesList.isNotEmpty()) {
-                    listState.scrollToItem(messagesList.size - 1)
-                }
+    // UI principale
+    if (isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Color(0xFF5AC8FA))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Caricamento chat...")
             }
-        } catch (e: Exception) {
-            Log.e("GroupChatScreen", "Errore caricamento messaggi: ${e.message}")
         }
+        return
     }
 
-    // Connessione al WebSocket per la chat in tempo reale
-    LaunchedEffect(groupId) {
-        try {
-            Log.d("GroupChatScreen", "Tentativo connessione WebSocket...")
-            chatService.connectToChat(groupId)
-            Log.d("GroupChatScreen", "Connessione WebSocket riuscita")
-
-            // Raccolta messaggi in tempo reale
-            scope.launch {
-                Log.d("GroupChatScreen", "Inizio raccolta messaggi WebSocket")
-                chatService.messages.collectLatest { message ->
-                    Log.d("GroupChatScreen", "Ricevuto messaggio: ${message.content}")
-
-                    // Aggiungi solo se non è già presente
-                    if (!messagesList.any { it.id == message.id }) {
-                        messagesList.add(message)
-
-                        // Scroll in fondo quando arriva un nuovo messaggio
-                        listState.animateScrollToItem(messagesList.size - 1)
-                    }
+    if (error != null) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                Icons.Default.Error,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = error!!,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Row {
+                Button(onClick = {
+                    error = null
+                    isLoading = true
+                }) {
+                    Text("Riprova")
                 }
-            }
-        } catch (e: Exception) {
-            Log.e("GroupChatScreen", "Errore WebSocket: ${e.message}", e)
-        }
-    }
-
-    // Pulisci la connessione WebSocket quando lasci la schermata
-    DisposableEffect(Unit) {
-        onDispose {
-            chatService.disconnect()
-        }
-    }
-
-    // Launcher per la fotocamera
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && imageUri.value != null) {
-            coroutineScope.launch {
-                try {
-                    // Usa il metodo corretto per caricare e inviare l'immagine
-                    Log.d("GroupChatScreen", "Inizio upload immagine")
-                    chatService.uploadAndSendImage(context, groupId, imageUri.value!!)
-                    Log.d("GroupChatScreen", "Upload immagine completato")
-                } catch (e: Exception) {
-                    Log.e("GroupChatScreen", "Errore upload immagine: ${e.message}")
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedButton(onClick = onBackClick) {
+                    Text("Indietro")
                 }
             }
         }
+        return
     }
 
-    // Funzione per creare un URI per l'immagine scattata
-    fun createImageUri(context: Context): Uri {
-        val file = File(context.cacheDir, "${System.currentTimeMillis()}.jpg")
-        return FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            file
-        )
-    }
-
-    // Mostra il dialog dei membri se richiesto
-    if (showMembersDialog) {
-        MembersDialog(
-            members = groupMembers,
-            isLoading = isLoadingMembers,
-            error = membersError,
-            onRefresh = { loadGroupMembers() },
-            onDismiss = { showMembersDialog = false }
-        )
-    }
-
+    // Interfaccia principale
     Column(modifier = Modifier.fillMaxSize()) {
+        // Top Bar
         TopAppBar(
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -264,39 +376,28 @@ fun GroupChatScreen(
                     loadGroupMembers()
                     showMembersDialog = true
                 }) {
-                    Icon(Icons.Default.Group, contentDescription = "Membri del gruppo", tint = Color(0xFF5AC8FA))
+                    Icon(Icons.Default.Group, contentDescription = "Membri", tint = Color(0xFF5AC8FA))
                 }
 
                 IconButton(onClick = { onInviteClick(groupId) }) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = "Invita utenti", tint = Color(0xFF5AC8FA))
+                    Icon(Icons.Default.PersonAdd, contentDescription = "Invita", tint = Color(0xFF5AC8FA))
                 }
 
                 IconButton(onClick = { onMapClick(groupId) }) {
-                    Icon(
-                        Icons.Default.Map,
-                        contentDescription = "Mappa del gruppo",
-                        tint = Color(0xFF5AC8FA)
-                    )
+                    Icon(Icons.Default.Map, contentDescription = "Mappa", tint = Color(0xFF5AC8FA))
                 }
             }
         )
 
-        //Mostra stato invio messaggi
+        // Indicatore invio messaggio
         if (isSending) {
             LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF5AC8FA)
             )
         }
 
-        // Mostra errori di invio
-        if (sendError != null) {
-            Text(
-                text = sendError!!,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
-
+        // Lista contenuti (messaggi + post)
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -304,11 +405,82 @@ fun GroupChatScreen(
                 .weight(1f)
                 .padding(horizontal = 16.dp)
         ) {
-            items(messagesList) { message ->
-                ChatMessageItem(message)
+            // Mostra prima i post
+            if (posts.isNotEmpty()) {
+                item {
+                    Text(
+                        "📸 Post del gruppo",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+
+                items(posts) { post ->
+                    PostItem(
+                        post = post,
+                        onLikeClick = { handleLikePost(it) },
+                        onLocationClick = { lat, lng ->
+                            onShowLocationOnMap(lat, lng)
+                        },
+                        onCommentClick = { postId -> // AGGIUNTO
+                            val postTitle = post.content.take(50).let {
+                                if (it.length == 50) "$it..." else it
+                            }
+                            onNavigateToComments(postId, postTitle)
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                item {
+                    Divider(
+                        modifier = Modifier.padding(vertical = 16.dp),
+                        color = Color.Gray.copy(alpha = 0.3f)
+                    )
+                    Text(
+                        "💬 Chat del gruppo",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+            }
+
+            // Messaggi chat
+            if (messages.isEmpty() && posts.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.Chat,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Nessun contenuto ancora.\nInizia la conversazione o crea un post!",
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            items(messages) { message ->
+                ChatMessageItem(message, sessionManager.getUserId())
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
+        // Barra di input
         Surface(
             modifier = Modifier.fillMaxWidth(),
             tonalElevation = 8.dp
@@ -316,7 +488,7 @@ fun GroupChatScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
@@ -325,14 +497,15 @@ fun GroupChatScreen(
                     placeholder = { Text("Scrivi un messaggio...") },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(24.dp),
-                    maxLines = 3
+                    maxLines = 3,
+                    enabled = !isSending
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
 
                 IconButton(
                     onClick = {
-                        val uri = createImageUri(context)
+                        val uri = createImageUri()
                         imageUri.value = uri
                         cameraLauncher.launch(uri)
                     },
@@ -345,69 +518,270 @@ fun GroupChatScreen(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Pulsante invio con gestione alternativa
                 IconButton(
-                    onClick = {
-                        if (newMessage.isNotBlank()) {
-                            coroutineScope.launch {
-                                try {
-                                    isSending = true
-                                    sendError = null
-
-                                    // Prova prima a utilizzare l'API HTTP per inviare il messaggio
-                                    try {
-                                        // Crea un messaggio locale temporaneo (con ID temporaneo)
-                                        val tempId = "temp-${System.currentTimeMillis()}"
-                                        val tempMessage = ChatService.ChatMessage(
-                                            id = tempId,
-                                            senderId = sessionManager.getUserId() ?: "",
-                                            senderName = sessionManager.getUsername() ?: "Me",
-                                            content = newMessage,
-                                            timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS", Locale.getDefault())
-                                                .format(Date()),
-                                            isCurrentUser = true
-                                        )
-
-                                        // Aggiungi messaggio temporaneo alla lista
-                                        messagesList.add(tempMessage)
-
-                                        // Scroll in fondo
-                                        listState.animateScrollToItem(messagesList.size - 1)
-
-                                        // Invia messaggio tramite API HTTP
-                                        val api = ServizioApi.getAuthenticatedClient(context)
-                                        val response = api.sendMessage(groupId, newMessage)
-
-                                        if (response.isSuccessful) {
-                                            Log.d("GroupChatScreen", "Messaggio inviato con successo via API HTTP")
-                                        } else {
-                                            Log.e("GroupChatScreen", "Errore API HTTP: ${response.code()}")
-                                            // Fallback a WebSocket
-                                            chatService.sendTextMessage(newMessage)
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("GroupChatScreen", "Errore API HTTP, provo WebSocket: ${e.message}")
-                                        // Fallback a WebSocket
-                                        chatService.sendTextMessage(newMessage)
-                                    }
-
-                                    // Pulisci il campo input
-                                    newMessage = ""
-                                } catch (e: Exception) {
-                                    Log.e("GroupChatScreen", "Errore invio messaggio: ${e.message}", e)
-                                    sendError = "Errore invio: ${e.message}"
-                                } finally {
-                                    isSending = false
-                                }
-                            }
-                        }
-                    },
+                    onClick = { sendMessage() },
+                    enabled = newMessage.isNotBlank() && !isSending,
                     modifier = Modifier
                         .size(48.dp)
-                        .background(Color(0xFF5AC8FA), CircleShape)
+                        .background(
+                            if (newMessage.isNotBlank() && !isSending) Color(0xFF5AC8FA) else Color.Gray,
+                            CircleShape
+                        )
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Invia", tint = Color.White)
+                    if (isSending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color.White
+                        )
+                    } else {
+                        Icon(Icons.Default.Send, contentDescription = "Invia", tint = Color.White)
+                    }
                 }
+            }
+        }
+    }
+
+    // Dialog membri
+    if (showMembersDialog) {
+        MembersDialog(
+            members = groupMembers,
+            isLoading = isLoadingMembers,
+            error = membersError,
+            onRefresh = { loadGroupMembers() },
+            onDismiss = { showMembersDialog = false }
+        )
+    }
+}
+
+@Composable
+fun PostItem(
+    post: PostResponse,
+    onLikeClick: (String) -> Unit,
+    onLocationClick: ((Double, Double) -> Unit)? = null,
+    onCommentClick: ((String) -> Unit)? = null // AGGIUNTO
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA))
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            // Header del post
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Avatar autore
+                if (post.author.profile_picture != null) {
+                    AsyncImage(
+                        model = post.author.profile_picture,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color(0xFF5AC8FA), CircleShape)
+                    ) {
+                        Text(
+                            text = post.author.username.take(1).uppercase(),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = post.author.username,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = DateUtils.formatPostDate(post.created_at),
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Contenuto del post
+            Text(
+                text = post.content,
+                fontSize = 14.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // Immagine se presente
+            post.media?.firstOrNull()?.let { media ->
+                Spacer(modifier = Modifier.height(8.dp))
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(media.media_url)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Azioni
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Like
+                IconButton(
+                    onClick = { onLikeClick(post.id.toString()) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Favorite,
+                        contentDescription = "Like",
+                        tint = if (post.user_has_liked) Color.Red else Color.Gray,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    text = "${post.likes_count}",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                // Commenti - AGGIUNTO
+                IconButton(
+                    onClick = { onCommentClick?.invoke(post.id.toString()) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Comment,
+                        contentDescription = "Commenti",
+                        tint = Color(0xFF5AC8FA),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // Mostra posizione se disponibile (cliccabile)
+                if (post.latitude != null && post.longitude != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable {
+                            onLocationClick?.invoke(post.latitude, post.longitude)
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.LocationOn,
+                            contentDescription = "Mostra sulla mappa",
+                            tint = Color(0xFF5AC8FA),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = post.location_name ?: "Posizione",
+                            fontSize = 12.sp,
+                            color = Color(0xFF5AC8FA),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else if (post.location_name != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = post.location_name,
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ChatMessageItem(message: MessageDTO, currentUserId: String?) {
+    val isCurrentUser = message.author.id.toString() == currentUserId
+    val alignment = if (isCurrentUser) Alignment.End else Alignment.Start
+    val bubbleColor = if (isCurrentUser) Color(0xFF5AC8FA) else Color(0xFFEEEEEE)
+    val textColor = if (isCurrentUser) Color.White else Color.Black
+
+    Column(
+        horizontalAlignment = alignment,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        if (!isCurrentUser) {
+            Text(
+                text = message.author.username,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(start = 12.dp, bottom = 2.dp)
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .background(
+                    color = bubbleColor,
+                    shape = RoundedCornerShape(
+                        topStart = 16.dp,
+                        topEnd = 16.dp,
+                        bottomStart = if (isCurrentUser) 16.dp else 0.dp,
+                        bottomEnd = if (isCurrentUser) 0.dp else 16.dp
+                    )
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Column {
+                message.media?.firstOrNull()?.let { media ->
+                    AsyncImage(
+                        model = media.media_url,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth(0.7f)
+                            .aspectRatio(4f / 3f)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                if (message.content.isNotBlank()) {
+                    Text(text = message.content, color = textColor)
+                }
+
+                Text(
+                    text = DateUtils.formatPostDate(message.created_at),
+                    color = if (isCurrentUser) Color.White.copy(alpha = 0.7f) else Color.Gray,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.align(Alignment.End)
+                )
             }
         }
     }
@@ -449,26 +823,18 @@ fun MembersDialog(
                     }
                 }
 
-                Divider(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                )
+                Divider(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
 
                 if (isLoading) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator()
                     }
                 } else if (error != null) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
@@ -476,41 +842,26 @@ fun MembersDialog(
                             color = MaterialTheme.colorScheme.error,
                             textAlign = TextAlign.Center
                         )
-
                         Spacer(modifier = Modifier.height(16.dp))
-
                         Button(onClick = onRefresh) {
                             Text("Riprova")
                         }
                     }
                 } else if (members.isEmpty()) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "Nessun membro trovato",
-                            textAlign = TextAlign.Center,
-                            color = Color.Gray
-                        )
+                        Text("Nessun membro trovato", color = Color.Gray)
                     }
                 } else {
                     LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
+                        modifier = Modifier.fillMaxWidth().weight(1f)
                     ) {
                         items(members) { membership ->
                             MemberItem(member = membership)
-
                             if (members.indexOf(membership) < members.size - 1) {
-                                Divider(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp)
-                                )
+                                Divider(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
                             }
                         }
                     }
@@ -528,29 +879,48 @@ fun MemberItem(member: GroupMembershipDTO) {
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar utente
-        MemberAvatar(user = member.user)
+        // Avatar
+        if (member.user.profile_picture != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(member.user.profile_picture)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(48.dp).clip(CircleShape)
+            )
+        } else {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color(0xFF5AC8FA), CircleShape)
+            ) {
+                Text(
+                    text = member.user.username.take(1).uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.width(16.dp))
 
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = member.user.username,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp
             )
-
-            Text(
-                text = if (member.user.first_name != null || member.user.last_name != null) {
-                    "${member.user.first_name ?: ""} ${member.user.last_name ?: ""}".trim()
-                } else {
-                    ""
-                },
-                fontSize = 14.sp,
-                color = Color.Gray
-            )
+            if (member.user.first_name != null || member.user.last_name != null) {
+                Text(
+                    text = "${member.user.first_name ?: ""} ${member.user.last_name ?: ""}".trim(),
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+            }
         }
 
         // Badge ruolo
@@ -571,111 +941,6 @@ fun MemberItem(member: GroupMembershipDTO) {
                 fontWeight = FontWeight.Medium,
                 color = roleColor
             )
-        }
-    }
-}
-
-@Composable
-fun MemberAvatar(user: UserDTO) {
-    if (user.profile_picture != null) {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(user.profile_picture)
-                .crossfade(true)
-                .build(),
-            contentDescription = "Avatar di ${user.username}",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-        )
-    } else {
-        // Avatar con iniziale
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(48.dp)
-                .background(Color(0xFF5AC8FA), CircleShape)
-        ) {
-            Text(
-                text = user.username.take(1).uppercase(),
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp
-            )
-        }
-    }
-}
-
-@Composable
-fun ChatMessageItem(message: ChatService.ChatMessage) {
-    val alignment = if (message.isCurrentUser) Alignment.End else Alignment.Start
-    val bubbleColor = if (message.isCurrentUser) Color(0xFF5AC8FA) else Color(0xFFEEEEEE)
-    val textColor = if (message.isCurrentUser) Color.White else Color.Black
-
-    // Formatta l'ora del messaggio
-    val time = remember(message.timestamp) {
-        try {
-            val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS", Locale.getDefault())
-                .parse(message.timestamp)
-            SimpleDateFormat("HH:mm", Locale.getDefault()).format(date ?: Date())
-        } catch (e: Exception) {
-            "ora"
-        }
-    }
-
-    Column(
-        horizontalAlignment = alignment,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-    ) {
-        if (!message.isCurrentUser) {
-            Text(
-                text = message.senderName,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(start = 12.dp, bottom = 2.dp)
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .background(
-                    color = bubbleColor,
-                    shape = RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (message.isCurrentUser) 16.dp else 0.dp,
-                        bottomEnd = if (message.isCurrentUser) 0.dp else 16.dp
-                    )
-                )
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Column {
-                message.imageUrl?.let { imageUrl ->
-                    Image(
-                        painter = rememberAsyncImagePainter(imageUrl),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxWidth(0.7f)
-                            .aspectRatio(4f / 3f)
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-
-                if (message.content.isNotBlank()) {
-                    Text(text = message.content, color = textColor)
-                }
-
-                Text(
-                    text = time,
-                    color = if (message.isCurrentUser) Color.White.copy(alpha = 0.7f) else Color.Gray,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.align(Alignment.End)
-                )
-            }
         }
     }
 }
