@@ -37,6 +37,9 @@ import coil.request.ImageRequest
 import com.example.frontend_triptales.auth.SessionManager
 import com.example.frontend_triptales.ui.theme.components.AIAssistantButton
 import com.example.frontend_triptales.api.ServizioApi
+import com.example.frontend_triptales.ui.theme.screens.FilterBottomSheet
+import com.example.frontend_triptales.ui.theme.screens.FilterIndicator
+import com.example.frontend_triptales.ui.theme.screens.filterPosts
 import com.example.frontend_triptales.ui.theme.services.HomeViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -63,6 +66,26 @@ data class StatItem(
     val label: String,
     val value: Int,
     val color: Color
+)
+
+// Enum per i tipi di filtro
+enum class FilterType {
+    ALL, MY_POSTS, WITH_MEDIA, WITH_LOCATION, RECENT
+}
+
+enum class DateRange(val displayName: String) {
+    ALL("Tutti"),
+    TODAY("Oggi"),
+    WEEK("Questa settimana"),
+    MONTH("Questo mese")
+}
+
+// Data class per le opzioni di filtro
+data class FilterOptions(
+    val selectedGroups: Set<String> = emptySet(),
+    val filterType: FilterType = FilterType.ALL,
+    val dateRange: DateRange = DateRange.ALL,
+    val searchQuery: String = ""
 )
 
 // Componente PostCard esterno
@@ -289,7 +312,7 @@ fun PostCard(
                 // Pulsante mappa se c'è una posizione
                 if (post.location.isNotBlank() && post.latitude != null && post.longitude != null) {
                     IconButton(
-                        onClick = { onLocationClick?.invoke(post.latitude!!, post.longitude!!) },
+                        onClick = { onLocationClick?.invoke(post.latitude, post.longitude) },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
@@ -298,16 +321,6 @@ fun PostCard(
                             tint = Color(0xFF5AC8FA)
                         )
                     }
-                }
-
-                IconButton(
-                    onClick = { /* Implementazione condivisione */ },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Condividi"
-                    )
                 }
             }
         }
@@ -452,6 +465,16 @@ fun HomeScreen(
     var isWeatherLoaded by remember { mutableStateOf(false) }
     var isPostsLoaded by remember { mutableStateOf(false) }
 
+    //Stati per il filtro
+    var currentFilters by remember { mutableStateOf(FilterOptions()) }
+    var showFilterSheet by remember { mutableStateOf(false) }
+    var availableGroups by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Post filtrati
+    val filteredPosts = remember(userPosts, currentFilters) {
+        filterPosts(userPosts, currentFilters)
+    }
+
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
     val scrollState = rememberLazyListState()
@@ -503,6 +526,21 @@ fun HomeScreen(
         onNavigateToComments(postId, postTitle)
     }
 
+    // Funzioni per il filtro
+    fun clearFilter(filterKey: String) {
+        currentFilters = when (filterKey) {
+            "type" -> currentFilters.copy(filterType = FilterType.ALL)
+            "date" -> currentFilters.copy(dateRange = DateRange.ALL)
+            "groups" -> currentFilters.copy(selectedGroups = emptySet())
+            "search" -> currentFilters.copy(searchQuery = "")
+            else -> currentFilters
+        }
+    }
+
+    fun resetAllFilters() {
+        currentFilters = FilterOptions()
+    }
+
     // Carica i dati dell'utente all'avvio
     LaunchedEffect(Unit) {
         // Carica meteo e posizione
@@ -524,6 +562,7 @@ fun HomeScreen(
                 }
 
                 val groups = groupsResponse.body() ?: emptyList()
+                availableGroups = groups.map { it.name }
                 val allPosts = mutableListOf<PostItem>()
 
                 // Per ogni gruppo, ottieni i post più recenti
@@ -533,7 +572,6 @@ fun HomeScreen(
 
                         if (postsResponse.isSuccessful && postsResponse.body() != null) {
                             postsResponse.body()?.forEach { post ->
-                                // Filtra solo i post normali, non i messaggi chat
                                 if (!post.is_chat_message) {
                                     allPosts.add(
                                         PostItem(
@@ -580,11 +618,11 @@ fun HomeScreen(
     }
 
     // Statistiche dell'utente
-    val stats = remember(userPosts) {
+    val stats = remember(filteredPosts) {
         listOf(
-            StatItem("Post", userPosts.size, Color(0xFF5AC8FA)),
-            StatItem("Luoghi", userPosts.mapNotNull { it.location }.distinct().size, Color(0xFFFF9500)),
-            StatItem("Gruppi", userPosts.mapNotNull { it.groupName }.distinct().size, Color(0xFF34C759))
+            StatItem("Post", filteredPosts.size, Color(0xFF5AC8FA)),
+            StatItem("Luoghi", filteredPosts.mapNotNull { it.location }.distinct().size, Color(0xFFFF9500)),
+            StatItem("Gruppi", filteredPosts.mapNotNull { it.groupName }.distinct().size, Color(0xFF34C759))
         )
     }
 
@@ -825,28 +863,129 @@ fun HomeScreen(
                     visible = isPostsLoaded,
                     enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
                     ) {
-                        Text(
-                            text = "Messaggi recenti",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        // Pulsante di filtro (opzionale)
-                        IconButton(onClick = { /* Implementazione filtro */ }) {
-                            Icon(
-                                imageVector = Icons.Default.FilterList,
-                                contentDescription = "Filtra",
-                                tint = Color(0xFF5AC8FA)
+                        // Prima riga: Titolo e conteggio
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Messaggi recenti",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
                             )
+
+                            // Mostra conteggio filtrato se diverso dal totale
+                            if (filteredPosts.size != userPosts.size) {
+                                Text(
+                                    text = "${filteredPosts.size} di ${userPosts.size} messaggi",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Seconda riga: Controlli filtro
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Lato sinistro: Badge indicatore filtri attivi
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (currentFilters != FilterOptions()) {
+                                    Badge(
+                                        modifier = Modifier.padding(end = 8.dp),
+                                        containerColor = Color(0xFF5AC8FA)
+                                    ) {
+                                        val activeFiltersCount = listOf(
+                                            currentFilters.filterType != FilterType.ALL,
+                                            currentFilters.dateRange != DateRange.ALL,
+                                            currentFilters.selectedGroups.isNotEmpty(),
+                                            currentFilters.searchQuery.isNotEmpty()
+                                        ).count { it }
+
+                                        Text(
+                                            text = activeFiltersCount.toString(),
+                                            color = Color.White,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "filtri attivi",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+
+                            // Lato destro: Pulsanti di controllo
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Pulsante reset filtri (visibile solo se ci sono filtri attivi)
+                                if (currentFilters != FilterOptions()) {
+                                    TextButton(
+                                        onClick = { resetAllFilters() }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Clear,
+                                            contentDescription = "Reset filtri",
+                                            tint = Color.Gray,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Reset",
+                                            color = Color.Gray,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+
+                                // Pulsante filtro - sempre visibile e prominente
+                                Button(
+                                    onClick = { showFilterSheet = true },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (currentFilters != FilterOptions())
+                                            Color(0xFF5AC8FA) else Color(0xFFF0F0F0),
+                                        contentColor = if (currentFilters != FilterOptions())
+                                            Color.White else Color.Gray
+                                    ),
+                                    modifier = Modifier.height(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FilterList,
+                                        contentDescription = "Filtra",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Filtri",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
                         }
                     }
+                }
+            }
+
+            if (currentFilters != FilterOptions()) {
+                item {
+                    FilterIndicator(
+                        filters = currentFilters,
+                        onClearFilter = { filterKey -> clearFilter(filterKey) }
+                    )
                 }
             }
 
@@ -897,7 +1036,6 @@ fun HomeScreen(
                                     // Riprova a caricare i post
                                     isPostsLoading = true
                                     postsError = null
-                                    // Qui inserisci la logica per ricaricare i post
                                 }
                             ) {
                                 Text("Riprova")
@@ -908,59 +1046,8 @@ fun HomeScreen(
             }
 
             // Nessun post trovato
-            if (!isPostsLoading && postsError == null && userPosts.isEmpty()) {
-                item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                Icons.Default.Forum,
-                                contentDescription = null,
-                                tint = Color(0xFF5AC8FA),
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Nessun messaggio recente",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Non ci sono messaggi recenti nei gruppi a cui partecipi. Unisciti a più gruppi per iniziare a comunicare!",
-                                fontSize = 14.sp,
-                                color = Color.Gray,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { /* Navigare alla ricerca gruppi */ },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF5AC8FA)
-                                )
-                            ) {
-                                Icon(Icons.Default.Search, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Trova gruppi")
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Lista dei post
-            if (!isPostsLoading && userPosts.isNotEmpty()) {
-                items(userPosts) { post ->
+            if (!isPostsLoading && filteredPosts.isNotEmpty()) {
+                items(filteredPosts) { post ->
                     AnimatedVisibility(
                         visible = isPostsLoaded,
                         enter = fadeIn(spring(stiffness = Spring.StiffnessLow))
@@ -980,6 +1067,66 @@ fun HomeScreen(
                     }
                 }
             }
+
+            if (!isPostsLoading && userPosts.isNotEmpty() && filteredPosts.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Default.FilterList,
+                                contentDescription = null,
+                                tint = Color(0xFF5AC8FA),
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Nessun risultato",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Nessun messaggio corrisponde ai filtri selezionati. Prova a modificare i criteri di ricerca.",
+                                fontSize = 14.sp,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { resetAllFilters() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF5AC8FA)
+                                )
+                            ) {
+                                Icon(Icons.Default.Clear, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Reset filtri")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
+
+    FilterBottomSheet(
+        isVisible = showFilterSheet,
+        onDismiss = { showFilterSheet = false },
+        currentFilters = currentFilters,
+        availableGroups = availableGroups,
+        onFiltersChanged = { newFilters ->
+            currentFilters = newFilters
+        }
+    )
 }

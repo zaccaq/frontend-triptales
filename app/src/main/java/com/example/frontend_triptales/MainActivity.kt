@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        checkCameraPermission() // 👈 richiesta permesso prima di avviare il contenuto
+        checkCameraPermission() //richiesta permesso prima di avviare il contenuto
 
         setContent {
             FrontendtriptalesTheme {

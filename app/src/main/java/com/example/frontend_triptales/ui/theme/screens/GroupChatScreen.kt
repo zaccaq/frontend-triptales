@@ -50,8 +50,8 @@ fun GroupChatScreen(
     groupId: String,
     onBackClick: () -> Unit,
     onInviteClick: (String) -> Unit,
-    onCreatePostClick: (String) -> Unit, // NUOVO parametro
-    onMapClick: (String) -> Unit = {} // ✨ NUOVO parametro
+    onCreatePostClick: (String) -> Unit,
+    onMapClick: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -65,7 +65,7 @@ fun GroupChatScreen(
     val listState = rememberLazyListState()
     val imageUri = remember { mutableStateOf<Uri?>(null) }
 
-    // Debug: Aggiungi stato per tenere traccia dell'invio
+    // Stato per tenere traccia dell'invio
     var isSending by remember { mutableStateOf(false) }
     var sendError by remember { mutableStateOf<String?>(null) }
 
@@ -116,7 +116,7 @@ fun GroupChatScreen(
         }
     }
 
-    // Prova a caricare i messaggi dal database all'inizio
+    // Caricare i messaggi dal database all'inizio
     LaunchedEffect(groupId) {
         try {
             val api = ServizioApi.getAuthenticatedClient(context)
@@ -256,7 +256,6 @@ fun GroupChatScreen(
                 }
             },
             actions = {
-                // NUOVO: Pulsante per creare un post
                 IconButton(onClick = { onCreatePostClick(groupId) }) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Crea post", tint = Color(0xFF5AC8FA))
                 }
@@ -272,7 +271,6 @@ fun GroupChatScreen(
                     Icon(Icons.Default.PersonAdd, contentDescription = "Invita utenti", tint = Color(0xFF5AC8FA))
                 }
 
-                // ✨ NUOVO pulsante per la mappa
                 IconButton(onClick = { onMapClick(groupId) }) {
                     Icon(
                         Icons.Default.Map,
@@ -283,7 +281,7 @@ fun GroupChatScreen(
             }
         )
 
-        // DEBUGGING: Mostra stato invio messaggi
+        //Mostra stato invio messaggi
         if (isSending) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth()
@@ -351,7 +349,6 @@ fun GroupChatScreen(
                 IconButton(
                     onClick = {
                         if (newMessage.isNotBlank()) {
-                            // MODIFICA CRITICA: Usa coroutineScope per gestire l'invio e aggiungi debug
                             coroutineScope.launch {
                                 try {
                                     isSending = true

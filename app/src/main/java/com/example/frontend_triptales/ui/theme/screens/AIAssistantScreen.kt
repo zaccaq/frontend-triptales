@@ -38,7 +38,6 @@ data class AIMessage(
 
 // ViewModel per gestire l'interazione con Gemini
 class GeminiChatViewModel : ViewModel() {
-    // API Key di Gemini (dovresti memorizzarla in modo sicuro)
     private val apiKey = "AIzaSyDyuW48jdaRef8ZZW1YS_JmV-VOfHH357s"
 
     // Modello generativo Gemini
@@ -66,7 +65,7 @@ class GeminiChatViewModel : ViewModel() {
         _messages.value = listOf(welcomeMessage)
     }
 
-    // Funzione per inviare un messaggio a Gemini e ricevere una risposta
+    // Invio un messaggio a Gemini e ricevere una risposta
     fun sendMessage(userMessage: String) {
         // Aggiungi il messaggio dell'utente alla lista
         _messages.value = _messages.value + AIMessage(userMessage, isFromUser = true)
@@ -92,10 +91,8 @@ class GeminiChatViewModel : ViewModel() {
                     La domanda dell'utente è: $userMessage
                 """.trimIndent()
 
-                // Aggiungi un log prima dell'invio della richiesta
                 Log.d("GeminiChat", "Inviando richiesta a Gemini: $userMessage")
 
-                // Invio della richiesta a Gemini con gestione più robusta
                 val response = try {
                     generativeModel.generateContent(prompt)
                 } catch (e: Exception) {
@@ -103,7 +100,6 @@ class GeminiChatViewModel : ViewModel() {
                     null
                 }
 
-                // Estrai la risposta testuale con controlli migliori
                 if (response != null && response.text != null) {
                     val responseText = response.text!!.trim()
                         .ifEmpty { "Mi dispiace, ho ricevuto una risposta vuota. Posso aiutarti con qualcos'altro riguardo i tuoi viaggi?" }
@@ -112,7 +108,6 @@ class GeminiChatViewModel : ViewModel() {
                     _messages.value = _messages.value + AIMessage(responseText, isFromUser = false)
                     Log.d("GeminiChat", "Risposta ricevuta: $responseText")
                 } else {
-                    // Gestione caso in cui la risposta è nulla
                     _messages.value = _messages.value + AIMessage(
                         "Mi dispiace, non sono riuscito a elaborare la tua richiesta. Puoi formularla in modo diverso?",
                         isFromUser = false
@@ -120,7 +115,6 @@ class GeminiChatViewModel : ViewModel() {
                     Log.e("GeminiChat", "Risposta nulla da Gemini")
                 }
             } catch (e: Exception) {
-                // Gestione degli errori con log dettagliato
                 Log.e("GeminiChat", "Errore nell'elaborazione della richiesta", e)
                 _messages.value = _messages.value + AIMessage(
                     "Mi dispiace, sto riscontrando dei problemi tecnici. Riprova tra poco o verifica la tua connessione internet.",
@@ -150,7 +144,6 @@ fun AIAssistantScreen(
     // Input utente
     var userInput by remember { mutableStateOf("") }
 
-    // Effetto per scrollare alla fine della lista quando arrivano nuovi messaggi
     LaunchedEffect(messages.size, isTyping) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -262,7 +255,7 @@ fun AIAssistantScreen(
                         maxLines = 3
                     )
 
-                    // Pulsante invio con i colori di Gemini
+                    // Pulsante invio
                     IconButton(
                         onClick = {
                             if (userInput.isNotBlank() && !isTyping) {
