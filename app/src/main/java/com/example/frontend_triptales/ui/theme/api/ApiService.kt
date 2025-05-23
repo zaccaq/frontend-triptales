@@ -230,6 +230,24 @@ data class CreatePostRequest(
     val location_name: String? = null
 )
 
+data class CommentDTO(
+    val id: Int,
+    val post: Int,
+    val author: UserDTO,
+    val content: String,
+    val created_at: String
+)
+
+data class CreateCommentRequest(
+    val content: String
+)
+
+data class LikeResponse(
+    val liked: Boolean,
+    val total_likes: Int,
+    val message: String
+)
+
 data class PostResponse(
     val id: Int,
     val group: Int,
@@ -359,10 +377,6 @@ interface TripTalesApi {
         @Part image: MultipartBody.Part? = null
     ): Response<LocationPostResponse>
 
-    // Endpoint per like/unlike post
-    @POST("api/diary-posts/{id}/like/")
-    suspend fun likePost(@Path("id") postId: Int): Response<Any>
-
     @DELETE("api/diary-posts/{id}/like/")
     suspend fun unlikePost(@Path("id") postId: Int): Response<Any>
 
@@ -380,10 +394,6 @@ interface TripTalesApi {
 
     @DELETE("api/diary-posts/{id}/")
     suspend fun deletePost(@Path("id") postId: String): Response<Unit>
-
-    // Like/Unlike post
-    @POST("api/diary-posts/{id}/like/")
-    suspend fun likePost(@Path("id") postId: String): Response<Unit>
 
     @DELETE("api/diary-posts/{id}/like/")
     suspend fun unlikePost(@Path("id") postId: String): Response<Unit>
@@ -417,6 +427,18 @@ interface TripTalesApi {
     // Metodo per ottenere tutti i post dell'utente
     @GET("api/diary-posts/my-posts/")
     suspend fun getMyPosts(): Response<List<PostResponse>>
+
+    @POST("api/diary-posts/{id}/like/")
+    suspend fun likePost(@Path("id") postId: String): Response<LikeResponse>
+
+    @GET("api/diary-posts/{id}/comments/")
+    suspend fun getPostComments(@Path("id") postId: String): Response<List<CommentDTO>>
+
+    @POST("api/diary-posts/{id}/add_comment/")
+    suspend fun addComment(
+        @Path("id") postId: String,
+        @Body request: CreateCommentRequest
+    ): Response<CommentDTO>
 }
 
 object WeatherService {

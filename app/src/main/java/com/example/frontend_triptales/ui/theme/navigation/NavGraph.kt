@@ -85,7 +85,10 @@ fun TripTalesApp() {
                 }
                 HomeScreen(
                     onProfileClick = { navController.navigate(Screen.Profile.route) },
-                    onAIAssistantClick = { navController.navigate(Screen.AIAssistant.route) }
+                    onAIAssistantClick = { navController.navigate(Screen.AIAssistant.route) },
+                    onNavigateToComments = { postId, postTitle ->
+                        navController.navigate(Screen.Comments.createRoute(postId, postTitle))
+                    }
                 )
             }
 
@@ -232,6 +235,29 @@ fun TripTalesApp() {
             // ===== AI ASSISTANT =====
             composable(Screen.AIAssistant.route) {
                 AIAssistantScreen(
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
+            composable(
+                route = Screen.Comments.route,
+                arguments = listOf(
+                    navArgument("postId") { type = NavType.StringType },
+                    navArgument("postTitle") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val postId = backStackEntry.arguments?.getString("postId") ?: ""
+                val encodedTitle = backStackEntry.arguments?.getString("postTitle") ?: ""
+
+                // Decode del titolo
+                val postTitle = try {
+                    java.net.URLDecoder.decode(encodedTitle, "UTF-8")
+                } catch (e: Exception) {
+                    "Post"
+                }
+
+                CommentsScreen(
+                    postId = postId,
+                    postTitle = postTitle,
                     onBackClick = { navController.popBackStack() }
                 )
             }

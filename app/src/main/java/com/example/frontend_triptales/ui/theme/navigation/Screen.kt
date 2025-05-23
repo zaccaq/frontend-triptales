@@ -33,5 +33,11 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object CreatePost : Screen("create_post/{groupId}", "Nuovo Post", Icons.Default.Add) {
         fun createRoute(groupId: String) = "create_post/$groupId"
     }
-
+    object Comments : Screen("comments/{postId}/{postTitle}", "Commenti", Icons.Default.Comment) {
+        fun createRoute(postId: String, postTitle: String): String {
+            // Encode del titolo per evitare problemi con caratteri speciali
+            val encodedTitle = java.net.URLEncoder.encode(postTitle, "UTF-8")
+            return "comments/$postId/$encodedTitle"
+        }
+    }
 }

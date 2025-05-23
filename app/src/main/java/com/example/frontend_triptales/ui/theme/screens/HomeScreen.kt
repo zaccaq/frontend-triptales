@@ -76,7 +76,17 @@ data class PlaceItem(
 
 // Componente PostCard esterno
 @Composable
-fun PostCard(post: PostItem, modifier: Modifier = Modifier, onLocationClick: ((Double, Double) -> Unit)? = null) {
+fun PostCard(
+    post: PostItem,
+    modifier: Modifier = Modifier,
+    onLocationClick: ((Double, Double) -> Unit)? = null,
+    onLikeClick: ((String) -> Unit)? = null,
+    onCommentClick: ((String) -> Unit)? = null
+) {
+    var likesCount by remember { mutableStateOf(post.likesCount) }
+    var isLiked by remember { mutableStateOf(post.userHasLiked) }
+    var isLiking by remember { mutableStateOf(false) }
+
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
@@ -236,36 +246,56 @@ fun PostCard(post: PostItem, modifier: Modifier = Modifier, onLocationClick: ((D
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = { /* Implementazione like */ },
-                    modifier = Modifier.size(36.dp)
+                // Pulsante Like FUNZIONALE
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Favorite,
-                        contentDescription = "Mi piace",
-                        tint = if (post.userHasLiked) Color(0xFFFF4081) else Color.Gray
+                    IconButton(
+                        onClick = {
+                            if (!isLiking) {
+                                onLikeClick?.invoke(post.id)
+                            }
+                        },
+                        enabled = !isLiking,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        if (isLiking) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color(0xFFFF4081)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = "Mi piace",
+                                tint = if (isLiked) Color(0xFFFF4081) else Color.Gray
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "$likesCount",
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(start = 4.dp),
+                        color = if (isLiked) Color(0xFFFF4081) else Color.Gray
                     )
                 }
 
-                Text(
-                    text = "${post.likesCount}",
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(start = 4.dp)
-                )
-
                 Spacer(modifier = Modifier.weight(1f))
 
+                // Pulsante Commenti FUNZIONALE
                 IconButton(
-                    onClick = { /* Implementazione commento */ },
+                    onClick = { onCommentClick?.invoke(post.id) },
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Comment,
-                        contentDescription = "Commenta"
+                        contentDescription = "Commenta",
+                        tint = Color(0xFF5AC8FA)
                     )
                 }
 
-                // NUOVO: Pulsante mappa se c'è una posizione
+                // Pulsante mappa se c'è una posizione
                 if (post.location.isNotBlank() && post.latitude != null && post.longitude != null) {
                     IconButton(
                         onClick = { onLocationClick?.invoke(post.latitude!!, post.longitude!!) },
@@ -290,6 +320,12 @@ fun PostCard(post: PostItem, modifier: Modifier = Modifier, onLocationClick: ((D
                 }
             }
         }
+    }
+
+    // Aggiorna gli stati locali quando cambiano le props
+    LaunchedEffect(post.likesCount, post.userHasLiked) {
+        likesCount = post.likesCount
+        isLiked = post.userHasLiked
     }
 }
 
@@ -593,7 +629,8 @@ fun HomeScreen(
     onAIAssistantClick: () -> Unit = {},
     onPostClick: (String) -> Unit = {},
     onCreatePostClick: () -> Unit = {}, // NUOVO parametro
-    onShowLocationOnMap: (Double, Double) -> Unit = { _, _ -> } // NUOVO parametro
+    onShowLocationOnMap: (Double, Double) -> Unit = { _, _ -> }, // NUOVO parametro
+    onNavigateToComments: (String, String) -> Unit = { _, _ -> } // NUOVO parametro per navigazione
 ) {
     // Stati dal ViewModel
     val weatherData by viewModel.weatherData.collectAsState()
@@ -623,6 +660,49 @@ fun HomeScreen(
     val firstName = remember {
         val name = sessionManager.getFirstName()
         if (name.isNotBlank()) name else sessionManager.getUsername() ?: "Utente"
+    }
+
+    fun handleLikePost(postId: String) {
+        coroutineScope.launch {
+            try {
+                val api = ServizioApi.getAuthenticatedClient(context)
+                val response = api.likePost(postId)
+
+                if (response.isSuccessful && response.body() != null) {
+                    val result = response.body()!!
+
+                    // Aggiorna la lista dei post
+                    userPosts = userPosts.map { post ->
+                        if (post.id == postId) {
+                            post.copy(
+                                likesCount = result.total_likes,
+                                userHasLiked = result.liked
+                            )
+                        } else {
+                            post
+                        }
+                    }
+
+                    // Mostra feedback
+                    // Toast o Snackbar con result.message
+                } else {
+                    Log.e("HomeScreen", "Errore like: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("HomeScreen", "Errore like: ${e.message}")
+            }
+        }
+    }
+
+    fun handleShowComments(postId: String) {
+        // Trova il post per ottenere il titolo
+        val post = userPosts.find { it.id == postId }
+        val postTitle = post?.content?.take(50)?.let {
+            if (it.length == 50) "$it..." else it
+        } ?: "Post"
+
+        // Naviga alla schermata commenti
+        onNavigateToComments(postId, postTitle)
     }
 
     // Carica i dati dell'utente all'avvio
@@ -1106,7 +1186,9 @@ fun HomeScreen(
                                 .clickable { onPostClick(post.id) },
                             onLocationClick = { lat, lng ->
                                 onShowLocationOnMap(lat, lng)
-                            }
+                            },
+                            onLikeClick = { postId -> handleLikePost(postId) },
+                            onCommentClick = { postId -> handleShowComments(postId) }
                         )
                     }
                 }
