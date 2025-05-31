@@ -17,7 +17,7 @@ class ChatService(private val sessionManager: SessionManager, private val contex
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS) // Nessun timeout per WebSocket
-        .connectTimeout(15000, TimeUnit.MILLISECONDS)
+        .connectTimeout(30000, TimeUnit.MILLISECONDS)
         .build()
 
     private val _messages = Channel<ChatMessage>(Channel.BUFFERED)
@@ -25,27 +25,12 @@ class ChatService(private val sessionManager: SessionManager, private val contex
 
     // Ottiene l'URL di base dinamicamente
     private fun getWebSocketBaseUrl(): String {
-        // Ottieni l'URL di base dall'API Service
-        val fullUrl = ServizioApi.getBaseUrl(context)
-
-        // Rimuovi http:// o https:// e eventuali path
-        val baseUrlWithoutProtocol = if (fullUrl.startsWith("https://")) {
-            fullUrl.substring(8)
-        } else {
-            fullUrl.substring(7)
-        }
-
-        // Rimuovi eventuali path e conserva solo il dominio con la porta
-        val domainAndPort = baseUrlWithoutProtocol.split("/")[0]
-
-        // Costruisci l'URL WebSocket
-        return "ws://$domainAndPort"
+        return "ws://costaalberto.duckdns.org:8005"
     }
 
     fun connectToChat(groupId: String) {
         val token = sessionManager.getToken() ?: return
 
-        // Usa l'URL di base dinamico
         val wsBaseUrl = getWebSocketBaseUrl()
         val wsUrl = "$wsBaseUrl/ws/chat/$groupId/"
 

@@ -486,20 +486,16 @@ object WeatherService {
 
 object ServizioApi {
     // URL per diversi ambienti
-    private const val EMULATOR_URL = "http://10.0.2.2:8000/"
-    private const val LOCAL_DEVICE_URL = "http://10.0.2.2:8000/"
-    private const val PRODUCTION_URL = "https://api.triptales.example.com/"
+    private const val EMULATOR_URL = "http://costaalberto.duckdns.org:8005/"
+    private const val LOCAL_DEVICE_URL = "http://costaalberto.duckdns.org:8005/"
+    private const val PRODUCTION_URL = "http://costaalberto.duckdns.org:8005/"
 
     // Tempo di timeout per le richieste
-    private const val TIMEOUT_MS = 15000L
+    private const val TIMEOUT_MS = 30000L
 
     // Funzione per determinare l'URL base appropriato
     fun getBaseUrl(context: Context): String {
-        return when {
-            isEmulator() -> EMULATOR_URL
-            isDebugBuild(context) -> LOCAL_DEVICE_URL
-            else -> PRODUCTION_URL
-        }
+        return PRODUCTION_URL
     }
 
     // Controlla se l'app è in esecuzione su un emulatore
@@ -525,6 +521,7 @@ object ServizioApi {
             .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .writeTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(true)  // Aggiungi retry automatico
             .build()
     }
 
